@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f17">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<title>Duelos FC</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#0b0f17;color:#e8ecf3;font:16px system-ui,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px 40px}
+#app{max-width:560px;margin:auto}
+h1{font-size:22px;margin:4px 0 16px}h2{font-size:16px;margin:0 0 12px}
+.card{background:#151b28;border:1px solid #232c3f;border-radius:16px;padding:14px;margin-bottom:12px}
+.tap:active{background:#1b2336}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.st{background:#0f1521;border-radius:12px;padding:10px;text-align:center}
+.st b{display:block;font-size:20px}.st small{font-size:11px}
+.btn{background:#22c55e;color:#04210f;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:15px}
+.btn.alt{background:#232c3f;color:#e8ecf3}.btn.red{background:#3a1519;color:#ff8a8a}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:#232c3f;margin:10px 0 4px}
+.bar i{display:block;height:100%}
+.g{color:#22c55e}.y{color:#eab308}.r{color:#ef4444}
+.muted,small{color:#8b95a9}
+input{width:100%;background:#0f1521;border:1px solid #232c3f;color:#fff;border-radius:12px;padding:12px;font-size:18px;margin:6px 0 12px}
+#m{position:fixed;inset:0;background:#000a;display:flex;align-items:flex-end;justify-content:center;z-index:9}
+#m>div{background:#151b28;width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:18px 18px 28px}
+.sc{display:flex;align-items:center;gap:10px}.sc label{flex:1}.sc input{text-align:center;font-size:28px}
+.m{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid #232c3f}
+.ic{background:none;border:0;font-size:18px;padding:6px}
+</style></head><body>
+<div id="app"></div>
+<script>
+const K='duelosfc_v1';
+let db=JSON.parse(localStorage.getItem(K)||'null')||{rivals:[],matches:[]};
+let view={r:null};
+const $=s=>document.querySelector(s);
+const save=()=>localStorage.setItem(K,JSON.stringify(db));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
+const sg=n=>(n>0?'+':'')+n;
+const cls=n=>n>0?'g':n<0?'r':'y';
+const sorted=a=>[...a].sort((x,y)=>y.date.localeCompare(x.date)||y.ts-x.ts);
+const fdate=d=>d.split('-').reverse().join('/');
+
+function stats(ms){
+  const s={pj:ms.length,w:0,d:0,l:0,gf:0,gc:0};
+  ms.forEach(m=>{s.gf+=m.my;s.gc+=m.opp;m.my>m.opp?s.w++:m.my<m.opp?s.l++:s.d++});
+  s.dg=s.gf-s.gc;s.bal=s.w-s.l;
+  const p=n=>s.pj?Math.round(n*1000/s.pj)/10:0;
+  s.pw=p(s.w);s.pd=p(s.d);s.pl=p(s.l);
+  return s;
+}
+const st=(v,l,c='')=>`<div class="st"><b class="${c}">${v}</b><small>${l}</small></div>`;
+function statsHTML(s){
+  return `<div class="grid">${st(s.pj,'Jugados')}${st(s.w,'Mis victorias','g')}${st(s.d,'Empates','y')}
+${st(s.l,'Mis derrotas','r')}${st(s.l,'Victorias rival')}${st(sg(s.bal),'Balance victorias',cls(s.bal))}
+${st(s.gf,'Goles a favor')}${st(s.gc,'Goles en contra')}${st(sg(s.dg),'Dif. de gol',cls(s.dg))}</div>
+<div class="bar"><i style="width:${s.pw}%;background:#22c55e"></i><i style="width:${s.pd}%;background:#eab308"></i><i style="width:${s.pl}%;background:#ef4444"></i></div>
+<small><span class="g">${s.pw}% victorias</span> · <span class="y">${s.pd}% empates</span> · <span class="r">${s.pl}% derrotas</span></small>`;
+}
+
+function homeView(){
+  const s=stats(db.matches);
+  return `<h1>⚽ Duelos FC</h1>
+<section class="card"><h2>Total general</h2>${statsHTML(s)}</section>
+<div class="row"><h2>Rivales</h2><button class="btn" onclick="rivalForm()">+ Rival</button></div>
+${db.rivals.length?db.rivals.map(r=>{
+  const t=stats(db.matches.filter(m=>m.rid===r.id));
+  return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(r.name)}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
+<small>${t.pj} PJ · ${t.w}G ${t.d}E ${t.l}P · GF ${t.gf} GC ${t.gc}</small></div>`}).join('')
+:'<p class="muted">Todavía no hay rivales. Tocá “+ Rival”.</p>'}
+<section class="card"><h2>Respaldo</h2>
+<div class="row"><button class="btn" onclick="exportData()">Exportar</button>
+<button class="btn alt" onclick="$('#imp').click()">Importar</button></div>
+<input id="imp" type="file" accept=".json" hidden onchange="importData(this)"></section>`;
+}
+
+function rivalView(r){
+  const ms=sorted(db.matches.filter(m=>m.rid===r.id));
+  return `<div class="row"><button class="btn alt" onclick="openRival(null)">←</button>
+<div><button class="ic" onclick="rivalForm('${r.id}')">✏️</button><button class="ic" onclick="delRival('${r.id}')">🗑</button></div></div>
+<h1>${esc(r.name)}</h1>
+<section class="card">${statsHTML(stats(ms))}</section>
+<div class="row"><h2>Historial</h2><button class="btn" onclick="matchForm()">+ Partido</button></div>
+<section class="card">${ms.length?ms.map(m=>{
+  const c=m.my>m.opp?'g':m.my<m.opp?'r':'y';
+  return `<div class="m"><div><b class="${c}">Yo ${m.my} - ${m.opp} ${esc(r.name)}</b><br><small>${fdate(m.date)}</small></div>
+<div><button class="ic" onclick="matchForm('${m.id}')">✏️</button><button class="ic" onclick="delMatch('${m.id}')">🗑</button></div></div>`}).join('')
+:'<p class="muted">Sin partidos todavía.</p>'}</section>`;
+}
+
+function render(){
+  const r=view.r&&db.rivals.find(x=>x.id===view.r);
+  if(view.r&&!r){view.r=null}
+  $('#app').innerHTML=r?rivalView(r):homeView();
+}
+function openRival(id){view.r=id;render();scrollTo(0,0)}
+
+function modal(h){closeM();const d=document.createElement('div');d.id='m';d.innerHTML=`<div>${h}</div>`;document.body.appendChild(d);const i=d.querySelector('input');i&&i.focus()}
+function closeM(){const m=$('#m');m&&m.remove()}
+
+function rivalForm(id){
+  const r=db.rivals.find(x=>x.id===id);
+  modal(`<h2>${r?'Editar':'Nuevo'} rival</h2>
+<input id="f1" placeholder="Nombre del rival" maxlength="30" value="${r?esc(r.name):''}">
+<div class="row"><button class="btn alt" onclick="closeM()">Cancelar</button><button class="btn" onclick="saveRival('${id||''}')">Guardar</button></div>`);
+}
+function saveRival(id){
+  const n=$('#f1').value.trim(); if(!n)return;
+  if(id)db.rivals.find(x=>x.id===id).name=n; else db.rivals.push({id:uid(),name:n});
+  save();closeM();render();
+}
+function delRival(id){
+  if(!confirm('¿Eliminar este rival y todos sus partidos?'))return;
+  db.rivals=db.rivals.filter(x=>x.id!==id);
+  db.matches=db.matches.filter(m=>m.rid!==id);
+  save();view.r=null;render();
+}
+
+function matchForm(id){
+  const m=db.matches.find(x=>x.id===id);
+  modal(`<h2>${m?'Editar':'Nuevo'} partido</h2>
+<div class="sc"><label>Yo<input id="f1" type="number" inputmode="numeric" min="0" max="99" value="${m?m.my:''}"></label><span>-</span>
+<label>Rival<input id="f2" type="number" inputmode="numeric" min="0" max="99" value="${m?m.opp:''}"></label></div>
+<label>Fecha<input id="f3" type="date" value="${m?m.date:today()}"></label>
+<div class="row"><button class="btn alt" onclick="closeM()">Cancelar</button><button class="btn" onclick="saveMatch('${id||''}')">Guardar</button></div>`);
+}
+function saveMatch(id){
+  const my=parseInt($('#f1').value),opp=parseInt($('#f2').value),date=$('#f3').value;
+  if(isNaN(my)||isNaN(opp)||my<0||opp<0||!date){alert('Completá goles y fecha');return}
+  if(id){Object.assign(db.matches.find(x=>x.id===id),{my,opp,date})}
+  else db.matches.push({id:uid(),rid:view.r,my,opp,date,ts:Date.now()});
+  save();closeM();render();
+}
+function delMatch(id){
+  if(!confirm('¿Eliminar este partido?'))return;
+  db.matches=db.matches.filter(x=>x.id!==id);save();render();
+}
+
+function exportData(){
+  const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);
+  a.download='duelos-fc-'+today()+'.json';a.click();
+}
+function importData(inp){
+  const f=inp.files[0]; if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      if(!Array.isArray(d.rivals)||!Array.isArray(d.matches))throw 0;
+      if(!confirm('Esto reemplaza todos los datos actuales. ¿Continuar?'))return;
+      db=d;save();view.r=null;render();
+    }catch(e){alert('Archivo no válido')}
+    inp.value='';
+  };
+  rd.readAsText(f);
+}
+
+render();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+</script></body></html>
