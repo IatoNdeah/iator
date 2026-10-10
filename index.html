@@ -182,7 +182,7 @@ function filtMs(ms,r){
     if(f.goals==='none'&&t!==0)return false;
     if(f.diff==='1'&&a!==1)return false;
     if(f.diff==='2'&&a<2)return false;
-    if(f.diff==='4'&&a<4)return false;
+    if(f.diff==='3'&&a<3)return false;
     return true;
   });
 }
@@ -203,7 +203,7 @@ function advHTML(r){
 <div class="fxb"><button class="btn alt" onclick="datePreset('today')">Hoy</button><button class="btn alt" onclick="datePreset('week')">Última semana</button><button class="btn alt" onclick="datePreset('month')">Último mes</button><button class="btn alt" onclick="datePreset('all')">Todo el historial</button></div>
 <div class="fxg"><label><small>Resultado</small><select onchange="setF('res',this.value)">${o('','Todos',f.res)}${o('w','Mis victorias',f.res)}${o('l','Victorias de '+esc(opN(r)),f.res)}${o('d','Empates',f.res)}</select></label>
 <label><small>Goles en el partido</small><select onchange="setF('goals',this.value)">${o('','Cualquiera',f.goals)}${o('many','Muchos (7 o más)',f.goals)}${o('few','Pocos (2 o menos)',f.goals)}${o('none','Sin goles (0-0)',f.goals)}</select></label>
-<label><small>Diferencia de goles</small><select onchange="setF('diff',this.value)">${o('','Cualquiera',f.diff)}${o('1','Por 1 gol',f.diff)}${o('2','Por 2 o más',f.diff)}${o('4','Goleadas (4 o más)',f.diff)}</select></label>
+<label><small>Diferencia de goles</small><select onchange="setF('diff',this.value)">${o('','Cualquiera',f.diff)}${o('1','Por 1 gol',f.diff)}${o('2','Por 2 o más',f.diff)}${o('3','Goleadas (3 o más)',f.diff)}</select></label>
 <label><small>Ordenar por</small><select onchange="setF('sort',this.value)">${o('new','Más recientes',f.sort||'new')}${o('old','Más antiguos',f.sort)}${o('goals','Más goles',f.sort)}${o('diff','Mayor diferencia',f.sort)}</select></label></div></div>`;
 }
 function upd(){
