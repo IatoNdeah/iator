@@ -309,4 +309,151 @@ function datos(r){
   const pick=F[Math.floor(R0*F.length)];
   return `<section class="card"><h2>Datos:</h2>
 <div class="st" style="text-align:left;margin-bottom:8px"><small>Estadística del día</small><b style="font-size:15px">${pick[1]}: ${pick[2]}</b></div>
-${G.map((t,i)=>`<h3 class="sec">${t}</h3>`+F.filter(f=>f[0]===i).map(f
+${G.map((t,i)=>`<h3 class="sec">${t}</h3>`+F.filter(f=>f[0]===i).map(f=>row(f[1],f[2])).join('')).join('')}</section>`;
+}
+
+function verify(){
+  const W=[],seen={},td=today();
+  db.matches.forEach(m=>{
+    const r=rv(m.rid),lab=`${esc(r?r.name:'(rival inexistente)')} ${esc(m.my)}-${esc(m.opp)} · ${esc(m.date||'sin fecha')}`,p=t=>W.push([lab,t]);
+    const ok=Number.isInteger(m.my)&&Number.isInteger(m.opp)&&m.my>=0&&m.opp>=0;
+    if(!r)p('Pertenece a un rival que no existe.');
+    if(!ok)p('Marcador incompleto o no numérico.');
+    if(!/^\d{4}-\d\d-\d\d$/.test(m.date||'')||isNaN(new Date(m.date)))p('Fecha inválida o ausente.');
+    else if(m.date>td)p('Fecha futura.');
+    if(ok&&(m.my+m.opp>=10||Math.abs(m.my-m.opp)>=6))p('Marcador inusual (puede estar bien).');
+    const k=[m.rid,m.my,m.opp,m.date].join('|');(seen[k]=seen[k]||{n:0,lab}).n++;
+  });
+  Object.values(seen).forEach(o=>{if(o.n>1)W.push([o.lab,`Posible duplicado: ${o.n} partidos con mismo rival, marcador y fecha (puede ser legítimo).`])});
+  return `<section class="card"><h2>Verificador de datos</h2><small style="display:block;margin-bottom:6px">Solo avisa: no edita, corrige ni borra nada.</small>
+${W.length?W.map(w=>`<div class="m" style="display:block"><b>${w[0]}</b><br><small>${w[1]}</small></div>`).join(''):'<p class="muted">Sin avisos. No se detectó nada raro.</p>'}</section>`;
+}
+
+function logHTML(){
+  const l=lg().reverse().slice(0,50),f=t=>new Date(t).toLocaleString('es');
+  return `<section class="card"><h2>Historial de modificaciones</h2>
+${l.length?l.map(e=>`<div class="m" style="display:block"><small>${f(e.t)} · ${e.k}</small><br><b style="font-size:14px">${e.a?esc(e.a):''}${e.a&&e.n?' → ':''}${e.n?esc(e.n):''}</b></div>`).join(''):'<p class="muted">Todavía no hay cambios registrados. Se registran desde ahora (altas, ediciones y eliminaciones hechas en este dispositivo).</p>'}</section>`;
+}
+
+const R=window.render;
+window.render=function(){R();try{const r=view.r&&rv(view.r);$('#app').insertAdjacentHTML('beforeend',(r?datos(r):verify())+logHTML())}catch(e){console.error('Ampliaciones:',e)}};
+window.render();
+})();
+</script>
+
+<script type="module">
+/* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getDatabase,ref,set,remove,onValue} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+/* 👇 PEGÁ ACÁ TU CONFIG (Firebase → Configuración del proyecto → Tus apps → Web) */
+const firebaseConfig={
+  apiKey:"AIzaSyBZ2c9dnhEl6pjzrAIui-bKKsc_jwoIj9U",
+  authDomain:"iator-db2c9.firebaseapp.com",
+  databaseURL:"https://iator-db2c9-default-rtdb.firebaseio.com",
+  projectId:"iator-db2c9",
+  storageBucket:"iator-db2c9.firebasestorage.app",
+  messagingSenderId:"397322044767",
+  appId:"1:397322044767:web:470cb48e2789a1b97ea2ea"
+};
+
+const badge=document.getElementById('cloud');
+let online=false,fail=false;
+function paint(){
+  if(fail){badge.textContent='☁️ Error · revisá las reglas de Firebase';badge.style.color='#ef4444';return}
+  if(!navigator.onLine||!online){badge.textContent='☁️ Sin conexión · guardado en el dispositivo';badge.style.color='#eab308';return}
+  badge.textContent='☁️ Sincronizado';badge.style.color='#22c55e';
+}
+
+if(Object.values(firebaseConfig).some(v=>String(v).startsWith('PEGAR'))){
+  badge.textContent='☁️ Falta pegar el firebaseConfig';badge.style.color='#eab308';
+}else start();
+
+function start(){
+  const app=initializeApp(firebaseConfig);
+  const rt=getDatabase(app);
+  const P={r:'iator/rivals',m:'iator/matches'};
+  const KN=K+'_known';
+  const ser=o=>JSON.stringify(Object.keys(o).sort().reduce((a,k)=>(a[k]=o[k],a),{}));
+  const sRival=r=>({id:r.id,name:r.name,ts:r.ts||0});
+  const sMatch=m=>({id:m.id,rid:m.rid,my:m.my,opp:m.opp,date:m.date,old:!!m.old,ts:m.ts||0});
+  const onErr=e=>{console.error('Firebase:',e);fail=true;paint()};
+
+  let remR=null,remM=null,ready=false;
+  const sent={r:{},m:{}};   // lo último que sabemos que está en la nube
+
+  function remember(){
+    localStorage.setItem(KN,JSON.stringify([...Object.keys(sent.r),...Object.keys(sent.m)]));
+  }
+  function push(k,list){
+    const ids=new Set();
+    list.forEach(o=>{
+      ids.add(o.id);
+      const s=ser(o);
+      if(sent[k][o.id]!==s){sent[k][o.id]=s;set(ref(rt,P[k]+'/'+o.id),o).catch(onErr)}
+    });
+    Object.keys(sent[k]).forEach(id=>{
+      if(!ids.has(id)){delete sent[k][id];remove(ref(rt,P[k]+'/'+id)).catch(onErr)}
+    });
+  }
+  function sync(){
+    if(!ready)return;
+    db.rivals.forEach((r,i)=>{if(!r.ts)r.ts=Date.now()+i});
+    localStorage.setItem(K,JSON.stringify(db));
+    push('r',db.rivals.map(sRival));
+    push('m',db.matches.map(sMatch));
+    remember();
+  }
+  window.cloudSync=sync;
+
+  // "Soy X" (flip) es una preferencia de cada dispositivo: no se sube
+  const withFlips=(list,flips)=>list
+    .map(r=>({...r,flip:!!flips[r.id]}))
+    .sort((a,b)=>(a.ts||0)-(b.ts||0)||a.name.localeCompare(b.name));
+  const mark=()=>{
+    sent.r={};sent.m={};
+    Object.keys(remR).forEach(id=>sent.r[id]=ser(remR[id]));
+    Object.keys(remM).forEach(id=>sent.m[id]=ser(remM[id]));
+  };
+
+  function apply(){
+    const flips=Object.fromEntries(db.rivals.map(r=>[r.id,r.flip]));
+    db.rivals=withFlips(Object.values(remR),flips);
+    db.matches=Object.values(remM);
+    mark();
+    localStorage.setItem(K,JSON.stringify(db));
+    remember();render();paint();
+  }
+
+  function initial(){
+    const known=JSON.parse(localStorage.getItem(KN)||'null');
+    const lr=db.rivals.filter(r=>!remR[r.id]),lm=db.matches.filter(m=>!remM[m.id]);
+    const remoteEmpty=!Object.keys(remR).length&&!Object.keys(remM).length;
+    let keepR=lr,keepM=lm;
+    if(known===null){
+      // primera vez en este dispositivo
+      if(!remoteEmpty&&(lr.length||lm.length)){
+        if(!confirm('Este dispositivo tiene '+lm.length+' partido(s) y '+lr.length+' rival(es) que no están en la nube.\n\n¿Subirlos? (Aceptar = subir y juntar, Cancelar = descartarlos y usar solo lo de la nube)')){keepR=[];keepM=[]}
+      }
+    }else{
+      // lo que ya estaba sincronizado y ya no está en la nube se borró desde otro dispositivo
+      const ks=new Set(known);
+      keepR=lr.filter(r=>!ks.has(r.id));keepM=lm.filter(m=>!ks.has(m.id));
+    }
+    const flips=Object.fromEntries(db.rivals.map(r=>[r.id,r.flip]));
+    db.rivals=withFlips([...Object.values(remR),...keepR],flips);
+    db.matches=[...Object.values(remM),...keepM];
+    mark();
+    ready=true;
+    sync();render();paint();
+  }
+
+  const step=()=>{if(remR&&remM){ready?apply():initial()}};
+  onValue(ref(rt,P.r),s=>{remR=s.val()||{};fail=false;step()},onErr);
+  onValue(ref(rt,P.m),s=>{remM=s.val()||{};fail=false;step()},onErr);
+  onValue(ref(rt,'.info/connected'),s=>{online=s.val()===true;paint()});
+  addEventListener('online',paint);addEventListener('offline',paint);
+  paint();
+}
+</script>
+</body></html>
