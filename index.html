@@ -282,6 +282,7 @@ function track(fn,a){
 ['saveMatch','delMatch','swapMatch','delRival'].forEach(f=>{const o=window[f];window[f]=function(...a){return track(o,a)}});
 
 const out=m=>m.my>m.opp?'W':m.my<m.opp?'L':'D';
+const chip=k=>`<span class="ch ${k}">${{W:'V',D:'E',L:'D'}[k]}</span>`;
 const runs=(a,p)=>{let b=0,c=0;a.forEach(x=>{c=p(x)?c+1:0;b=Math.max(b,c)});return b};
 const since=(a,p)=>{for(let i=a.length-1;i>=0;i--)if(p(a[i]))return a.length-1-i;return null};
 const mx=(a,f)=>a.reduce((x,y)=>f(y)>f(x)?y:x,a[0]);
@@ -292,7 +293,7 @@ const row=(l,v)=>`<div class="m"><small>${l}</small><b style="text-align:right">
 
 function datos(r){
   const ms=db.matches.filter(m=>m.rid===r.id&&m.date).sort((x,y)=>x.date.localeCompare(y.date)||(x.ts||0)-(y.ts||0)).map(m=>PM(m,r));
-  if(!ms.length)return `<section class="card"><h2>Datos:</h2><p class="muted">Todavía no hay partidos para calcular datos.</p></section>`;
+  if(!ms.length)return `<section class="card dt"><h2>Datos:</h2><p class="muted">Todavía no hay partidos para calcular datos.</p></section>`;
   const A=esc(meN(r)),B=esc(opN(r)),n=ms.length,s=stats(ms),F=[];
   const d=m=>`${A} ${m.my}-${m.opp} ${B} · ${fdate(m.date)}`;
   const add=(g,l,v)=>F.push([g,l,v]);
@@ -301,10 +302,10 @@ function datos(r){
   add(0,'Ventaja histórica',s.bal===0?'Igualados en victorias':`${s.bal>0?A:B} +${Math.abs(s.bal)} victorias`);
   add(0,'Diferencia de goles',s.dg===0?'Igualados':`${s.dg>0?A:B} +${Math.abs(s.dg)}`);
   [5,10].forEach(k=>{if(n>=1){const t=stats(ms.slice(-k));add(0,`Últimos ${Math.min(k,n)} (${A})`,`${t.w}G ${t.d}E ${t.l}P`)}});
-  add(0,'Últimos 10 (desde '+A+')',ms.slice(-10).map(m=>({W:'G',D:'E',L:'P'})[out(m)]).join(' '));
+  add(0,'Últimos 10 (desde '+A+')',ms.slice(-10).map(m=>chip(out(m))).join(''));
   const L=ms[n-1];add(0,'Último encuentro',`${out(L)==='W'?A:out(L)==='L'?B:'Empate'} · ${d(L)}`);
   let c=0;const lo=out(L);for(let i=n-1;i>=0&&out(ms[i])===lo;i--)c++;
-  add(1,'Racha actual',lo==='D'?`${c} empate(s) seguido(s)`:`${lo==='W'?A:B}: ${c} victoria(s) seguida(s)`);
+  add(1,'Racha actual',chip(lo).repeat(Math.min(c,10))+' '+(lo==='D'?`${c} empate(s) seguido(s)`:`${lo==='W'?A:B}: ${c} victoria(s) seguida(s)`));
   add(1,'Mayor racha de victorias',`${A} ${runs(ms,m=>m.my>m.opp)} · ${B} ${runs(ms,m=>m.my<m.opp)}`);
   add(1,'Mayor racha sin perder',`${A} ${runs(ms,m=>m.my>=m.opp)} · ${B} ${runs(ms,m=>m.my<=m.opp)}`);
   add(1,'Mayor racha sin ganar (sequía histórica)',`${A} ${runs(ms,m=>m.my<=m.opp)} · ${B} ${runs(ms,m=>m.my>=m.opp)}`);
@@ -320,39 +321,39 @@ function datos(r){
     add(2,`Mejor ${nom} de ${A}`,hi[1]>0?`${hi[0]} (+${hi[1]})`:'—');add(2,`Mejor ${nom} de ${B}`,lw[1]<0?`${lw[0]} (+${-lw[1]})`:'—')});
   const G=['Cara a cara','Rachas y sequías','Récords'];
   const pick=F[Math.floor(R0*F.length)];
-  return `<section class="card"><h2>Datos:</h2>
+  return `<section class="card dt"><h2>Datos:</h2>
 <div class="st" style="text-align:left;margin-bottom:8px"><small>Estadística del día</small><b style="font-size:15px">${pick[1]}: ${pick[2]}</b></div>
-${G.map((t,i)=>`<h3 class="sec">${t}</h3>`+F.filter(f=>f[0]===i).map(f=>row(f[1],f[2])).join('')).join('')}</section>`;
+${G.map((t,i)=>`<div class="dg dg${i}"><h3 class="sec">${t}</h3>`+F.filter(f=>f[0]===i).map(f=>row(f[1],f[2])).join('')+'</div>').join('')}</section>`;
 }
 
 function verify(){
   const W=[],seen={},td=today();
   db.matches.forEach(m=>{
-    const r=rv(m.rid),lab=`${esc(r?r.name:'(rival inexistente)')} ${esc(m.my)}-${esc(m.opp)} · ${esc(m.date||'sin fecha')}`,p=t=>W.push([lab,t]);
+    const r=rv(m.rid),lab=`${esc(r?r.name:'(rival inexistente)')} ${esc(m.my)}-${esc(m.opp)} · ${esc(m.date||'sin fecha')}`,p=(t,s)=>W.push([lab,t,s||'y']);
     const ok=Number.isInteger(m.my)&&Number.isInteger(m.opp)&&m.my>=0&&m.opp>=0;
-    if(!r)p('Pertenece a un rival que no existe.');
-    if(!ok)p('Marcador incompleto o no numérico.');
-    if(!/^\d{4}-\d\d-\d\d$/.test(m.date||'')||isNaN(new Date(m.date)))p('Fecha inválida o ausente.');
+    if(!r)p('Pertenece a un rival que no existe.','r');
+    if(!ok)p('Marcador incompleto o no numérico.','r');
+    if(!/^\d{4}-\d\d-\d\d$/.test(m.date||'')||isNaN(new Date(m.date)))p('Fecha inválida o ausente.','r');
     else if(m.date>td)p('Fecha futura.');
     if(ok&&(m.my+m.opp>=10||Math.abs(m.my-m.opp)>=6))p('Marcador inusual (puede estar bien).');
     const k=[m.rid,m.my,m.opp,m.date].join('|');(seen[k]=seen[k]||{n:0,lab}).n++;
   });
   Object.values(seen).forEach(o=>{if(o.n>1)W.push([o.lab,`Posible duplicado: ${o.n} partidos con mismo rival, marcador y fecha (puede ser legítimo).`])});
-  return `<section class="card" id="ver"><h2>Verificador de datos</h2><small style="display:block;margin-bottom:6px">Solo avisa: no edita, corrige ni borra nada.</small>
-${W.length?W.map(w=>`<div class="m" style="display:block"><b>${w[0]}</b><br><small>${w[1]}</small></div>`).join(''):'<p class="muted">Sin avisos. No se detectó nada raro.</p>'}</section>`;
+  return `<section class="card" id="ver"><h2>Verificador de datos</h2><small style="display:block;margin-bottom:6px">Solo avisa: no edita, corrige ni borra nada.</small>${W.length?`<small style="display:block;margin-bottom:6px"><span class="y">${W.filter(w=>w[2]!=='r').length} advertencia(s)</span> · <span class="r">${W.filter(w=>w[2]==='r').length} posible(s) error(es) grave(s)</span></small>`:''}
+${W.length?W.map(w=>`<div class="m w${w[2]||'y'}" style="display:block"><span class="tg t${w[2]||'y'}">${w[2]==='r'?'POSIBLE ERROR GRAVE':'ADVERTENCIA'}</span><b>${w[0]}</b><br><small>${w[1]}</small></div>`).join(''):'<p class="muted">Sin avisos. No se detectó nada raro.</p>'}</section>`;
 }
 
 function logHTML(){
   const l=lg().reverse().slice(0,50),f=t=>new Date(t).toLocaleString('es');
   return `<section class="card"><h2>Historial de modificaciones</h2>
-${l.length?l.map(e=>`<div class="m" style="display:block"><small>${f(e.t)} · ${e.k}</small><br><b style="font-size:14px">${e.a?esc(e.a):''}${e.a&&e.n?' → ':''}${e.n?esc(e.n):''}</b></div>`).join(''):'<p class="muted">Todavía no hay cambios registrados. Se registran desde ahora (altas, ediciones y eliminaciones hechas en este dispositivo).</p>'}</section>`;
+${l.length?l.map(e=>`<div class="m" style="display:block"><small>${f(e.t)} · <span class="tg tg${e.k==='Alta'?'a':e.k==='Edición'?'e':'x'}">${e.k}</span></small><br><b style="font-size:14px">${e.a?esc(e.a):''}${e.a&&e.n?' → ':''}${e.n?esc(e.n):''}</b></div>`).join(''):'<p class="muted">Todavía no hay cambios registrados. Se registran desde ahora (altas, ediciones y eliminaciones hechas en este dispositivo).</p>'}</section>`;
 }
 
 const UI='iator_ui_v1';let op={};try{op=JSON.parse(localStorage.getItem(UI))||{}}catch(e){}
 function fold(key,title,nodes,hide){
   if(!nodes[0]||!nodes[nodes.length-1])return;
   const f=document.createElement('div'),h=document.createElement('div'),b=document.createElement('div'),i=document.createElement('div');
-  f.className='fold';h.className='fh';b.className='fb';i.className='fi';h.setAttribute('role','button');h.tabIndex=0;
+  f.className='fold k-'+key;h.className='fh';b.className='fb';i.className='fi';h.setAttribute('role','button');h.tabIndex=0;
   const paint=()=>{const o=!!op[key];f.classList.toggle('open',o);h.setAttribute('aria-expanded',o);
     h.innerHTML=`<div><b>${title}</b><br><small>${o?'Presionar para ocultar':'Presionar para ver'}</small></div><span class="ar">${o?'⬆':'⬇'}</span>`};
   const tg=()=>{op[key]=!op[key];try{localStorage.setItem(UI,JSON.stringify(op))}catch(e){}paint()};
@@ -433,6 +434,62 @@ window.render=function(){
     if(t)t.insertAdjacentHTML('afterend','<div class="row" style="justify-content:flex-end;margin-top:-4px"><button class="btn alt" style="padding:6px 10px;font-size:13px" onclick="histEditor()">↔ Ordenar y renombrar historiales</button></div>')}}
   catch(e){console.error('Historiales:',e)}
 };
+window.render();
+})();
+</script>
+
+<style>
+/* ===== IDENTIDAD VISUAL: solo colores y acentos (no cambia datos ni cálculos) ===== */
+:root{--v:#22c55e;--d:#ef4444;--e:#eab308;--h1:#38bdf8;--h2:#a78bfa;--gf:#22d3ee;--go:#fb923c}
+.ch{display:inline-block;min-width:20px;padding:2px 0;margin-right:3px;border-radius:6px;text-align:center;font-size:12px;font-weight:700;line-height:1.2}
+.ch.W{background:var(--v);color:#04210f}.ch.L{background:var(--d);color:#fff}.ch.D{background:var(--e);color:#1a1400}
+.m.rw{box-shadow:inset 3px 0 0 var(--v);background:linear-gradient(90deg,#22c55e14,transparent 45%);padding-left:10px}
+.m.rl{box-shadow:inset 3px 0 0 var(--d);background:linear-gradient(90deg,#ef444414,transparent 45%);padding-left:10px}
+.m.rd{box-shadow:inset 3px 0 0 var(--e);background:linear-gradient(90deg,#eab30812,transparent 45%);padding-left:10px}
+.m.hn>div:first-child small::before{content:"● ";color:var(--h1)}.m.ho>div:first-child small::before{content:"● ";color:var(--h2)}
+.tabs button.hn{box-shadow:inset 0 -3px 0 var(--h1)}.tabs button.ho{box-shadow:inset 0 -3px 0 var(--h2)}
+.sec.hn{color:var(--h1);border-left:3px solid var(--h1);padding-left:8px}
+.sec.ho{color:var(--h2);border-left:3px solid var(--h2);padding-left:8px}
+.gf{color:var(--gf)}.gc{color:var(--go)}
+.card>h2::before{content:"";display:inline-block;width:4px;height:14px;border-radius:2px;background:var(--ac,var(--acc));margin-right:8px;vertical-align:-1px}
+.card.k-bk{--ac:#60a5fa}.card.k-lg{--ac:#94a3b8}.card.k-es{--ac:#2dd4bf}.card.dt{--ac:#f472b6}
+.card.tap.sg{box-shadow:inset 4px 0 0 var(--v)}.card.tap.sr{box-shadow:inset 4px 0 0 var(--d)}.card.tap.sy{box-shadow:inset 4px 0 0 var(--e)}
+.dg0{--dc:#5eead4}.dg1{--dc:#f472b6}.dg2{--dc:#fdba74}
+.dg .sec{color:var(--dc);border-left:3px solid var(--dc);padding-left:8px}.dg .m b{color:var(--dc)}
+.dt .st{background:linear-gradient(135deg,#f472b61f,#5eead41f);box-shadow:inset 4px 0 0 #f472b6}
+.m.wy{box-shadow:inset 3px 0 0 var(--e);background:#eab30812;padding-left:10px}
+.m.wr{box-shadow:inset 3px 0 0 var(--d);background:#ef444414;padding-left:10px}
+.tg{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.4px;padding:1px 6px;border-radius:6px;margin-right:6px;vertical-align:1px}
+.tg.ty{background:#eab30826;color:var(--e)}.tg.tr{background:#ef444426;color:var(--d)}
+.tg.tga{background:#2dd4bf26;color:#2dd4bf}.tg.tge{background:#60a5fa26;color:#60a5fa}.tg.tgx{background:#fb923c26;color:var(--go)}
+.k-ver .fh{box-shadow:inset 4px 0 0 var(--e)}
+.k-hist .fh{box-shadow:inset 4px 0 0 var(--h1),inset 8px 0 0 var(--h2)}
+</style>
+<script>
+/* ===== IDENTIDAD VISUAL: solo agrega clases/colores al dibujar; no toca db ni los datos ===== */
+(function(){
+function paintUI(){
+  const A=document.getElementById('app'),L={W:'w',L:'l',D:'d'},V={W:'V',L:'D',D:'E'};
+  A.querySelectorAll('.m').forEach(m=>{
+    if(!m.querySelector('button[onclick^="swapMatch"]'))return;
+    const b=m.querySelector('b'),c=b&&(b.classList.contains('g')?'W':b.classList.contains('r')?'L':'D');
+    if(c){m.classList.add('r'+L[c]);m.firstElementChild.insertAdjacentHTML('afterbegin',`<span class="ch ${c}">${V[c]}</span>`)}
+    m.classList.add(m.classList.contains('old')?'ho':'hn');
+  });
+  A.querySelectorAll('.tabs button').forEach(b=>{const o=b.getAttribute('onclick')||'';
+    if(o.indexOf("setTab('new')")>=0)b.classList.add('hn');else if(o.indexOf("setTab('old')")>=0)b.classList.add('ho')});
+  A.querySelectorAll('h3.sec').forEach(h=>{if(/^Historial /.test(h.textContent))h.classList.add(h.classList.contains('old')?'ho':'hn')});
+  A.querySelectorAll('section.card>h2').forEach(h=>{const t=h.textContent;
+    const k=t==='Respaldo y exportación'?'k-bk':t==='Historial de modificaciones'?'k-lg':/^Estad/.test(t)?'k-es':'';if(k)h.parentNode.classList.add(k)});
+  A.querySelectorAll('.card.tap').forEach(c=>{
+    const b=c.querySelector('.row b:last-child'),s=c.querySelector('small');
+    if(b)c.classList.add(b.classList.contains('g')?'sg':b.classList.contains('r')?'sr':'sy');
+    const m=s&&s.textContent.trim().match(/^(\d+) PJ · (\d+)G (\d+)E (\d+)P · GF (\d+) GC (\d+)$/);
+    if(m)s.innerHTML=`${m[1]} PJ · <span class="g">${m[2]}G</span> <span class="y">${m[3]}E</span> <span class="r">${m[4]}P</span> · <span class="gf">GF ${m[5]}</span> <span class="gc">GC ${m[6]}</span>`;
+  });
+}
+const R3=window.render;
+window.render=function(){R3();try{paintUI()}catch(e){console.error('Visual:',e)}};
 window.render();
 })();
 </script>
