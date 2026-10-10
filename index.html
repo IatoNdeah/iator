@@ -233,7 +233,6 @@ function exportTxt(){
   });
   dl('iator-historial-'+today()+'.txt','text/plain;charset=utf-8',L.join('\n'));
 }
-let pendingImport=null;
 function importData(inp){
   const f=inp.files[0]; if(!f)return;
   const rd=new FileReader();
@@ -241,38 +240,12 @@ function importData(inp){
     try{
       const d=JSON.parse(rd.result);
       if(!Array.isArray(d.rivals)||!Array.isArray(d.matches))throw 0;
-      pendingImport=d;importForm(d);
+      if(!confirm('Esto reemplaza todos los datos actuales. ¿Continuar?'))return;
+      db=d;db.cfg=Object.assign({},DEF,db.cfg||{});save();view={r:null,tab:'all'};applyTheme();render();
     }catch(e){alert('Archivo no válido')}
     inp.value='';
   };
   rd.readAsText(f);
-}
-function importForm(d){
-  const o=d.matches.filter(m=>m.old).length,n=d.matches.length-o;
-  modal(`<h2>Importar historial</h2>
-<small style="display:block;margin-bottom:8px">El archivo trae ${d.matches.length} partido(s): ${n} en EF27 y ${o} en EF26.</small>
-<div style="display:flex;flex-direction:column;gap:8px;margin:8px 0 12px">
-<button class="btn" onclick="doImport('old')">Cargar como Historial EF26</button>
-<button class="btn" onclick="doImport('new')">Cargar como Historial EF27</button>
-<button class="btn alt" onclick="doImport('file')">Reemplazar todo (tal como está el archivo)</button></div>
-<small style="display:block;margin-bottom:12px">EF26 o EF27 reemplazan solo ese historial y no tocan el otro. “Reemplazar todo” borra lo que hay ahora.</small>
-<div class="row"><button class="btn alt" onclick="pendingImport=null;closeM()">Cancelar</button></div>`);
-}
-function doImport(mode){
-  const d=pendingImport; if(!d)return;
-  if(mode==='file'){
-    if(!confirm('Esto reemplaza todos los datos actuales. ¿Continuar?'))return;
-    db=d;db.cfg=Object.assign({},DEF,db.cfg||{});
-  }else{
-    const old=mode==='old',nm=old?'EF26':'EF27';
-    if(!confirm('Esto reemplaza los partidos actuales del Historial '+nm+'. El otro historial no se toca. ¿Continuar?'))return;
-    const ids=new Set(d.matches.map(m=>m.id));
-    const keep=db.matches.filter(m=>!!m.old!==old&&!ids.has(m.id));
-    db.matches=[...keep,...d.matches.map(m=>({...m,old}))];
-    d.rivals.forEach(r=>{if(!rv(r.id))db.rivals.push({id:r.id,name:r.name,ts:r.ts})});
-  }
-  pendingImport=null;
-  save();view={r:null,tab:'all'};closeM();applyTheme();render();
 }
 
 applyTheme();render();
@@ -360,4 +333,39 @@ function start(){
     db.matches=Object.values(remM);
     mark();
     localStorage.setItem(K,JSON.stringify(db));
-   
+    remember();render();paint();
+  }
+
+  function initial(){
+    const known=JSON.parse(localStorage.getItem(KN)||'null');
+    const lr=db.rivals.filter(r=>!remR[r.id]),lm=db.matches.filter(m=>!remM[m.id]);
+    const remoteEmpty=!Object.keys(remR).length&&!Object.keys(remM).length;
+    let keepR=lr,keepM=lm;
+    if(known===null){
+      // primera vez en este dispositivo
+      if(!remoteEmpty&&(lr.length||lm.length)){
+        if(!confirm('Este dispositivo tiene '+lm.length+' partido(s) y '+lr.length+' rival(es) que no están en la nube.\n\n¿Subirlos? (Aceptar = subir y juntar, Cancelar = descartarlos y usar solo lo de la nube)')){keepR=[];keepM=[]}
+      }
+    }else{
+      // lo que ya estaba sincronizado y ya no está en la nube se borró desde otro dispositivo
+      const ks=new Set(known);
+      keepR=lr.filter(r=>!ks.has(r.id));keepM=lm.filter(m=>!ks.has(m.id));
+    }
+    const flips=Object.fromEntries(db.rivals.map(r=>[r.id,r.flip]));
+    db.rivals=withFlips([...Object.values(remR),...keepR],flips);
+    db.matches=[...Object.values(remM),...keepM];
+    mark();
+    ready=true;
+    sync();render();paint();
+  }
+
+  const step=()=>{if(remR&&remM){ready?apply():initial()}};
+  onValue(ref(rt,P.r),s=>{remR=s.val()||{};fail=false;step()},onErr);
+  onValue(ref(rt,P.m),s=>{remM=s.val()||{};fail=false;step()},onErr);
+  onValue(ref(rt,'.info/connected'),s=>{online=s.val()===true;paint()});
+  addEventListener('online',paint);addEventListener('offline',paint);
+  paint();
+}
+</script>
+</body></html>
+
