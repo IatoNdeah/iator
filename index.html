@@ -922,6 +922,113 @@ if(typeof window.statsForm==='function'){
 })();
 </script>
 
+<script>
+/* ===== IMPORTAR A UN HISTORIAL v1: antes de importar un respaldo (.json) pregunta a qué historial va (EF27 / EF26 o como los hayas renombrado).
+   Envuelve importData desde afuera: el texto de la función original no se toca y sigue disponible con la opción "Reemplazar todo".
+   Los cambios se calculan primero y se aplican juntos al final: si algo falla, no se modifica nada. ===== */
+(function(){
+const key=s=>String(s==null?'':s).trim().toLowerCase();
+const same=(a,b)=>a.rid===b.rid&&a.my===b.my&&a.opp===b.opp&&a.date===b.date&&!!a.old===!!b.old;
+
+/* Calcula el resultado sin tocar db. cur={rivals,matches}; file=el respaldo; target='new'|'old'; mode='rep' (reemplazar ese historial) | 'add' (sumar) */
+function plan(cur,file,target,mode,newId){
+  const isOld=target==='old';
+  const rivals=cur.rivals.slice(),byId=new Map(rivals.map(r=>[r.id,r])),byName=new Map(rivals.map(r=>[key(r.name),r]));
+  const idMap={};let newR=0;
+  (file.rivals||[]).forEach(fr=>{
+    if(!fr||fr.id==null||!String(fr.name||'').trim())return;
+    let t=byId.get(fr.id)||byName.get(key(fr.name));
+    if(!t){
+      t={id:byId.has(fr.id)?newId():fr.id,name:String(fr.name).trim(),ts:Number(fr.ts)||Date.now(),flip:!!fr.flip};
+      rivals.push(t);byId.set(t.id,t);byName.set(key(t.name),t);newR++;
+    }
+    idMap[fr.id]=t.id;
+  });
+  const removed=mode==='rep'?cur.matches.filter(m=>!!m.old===isOld):[];
+  const rem=new Set(removed.map(m=>m.id));
+  const kept=cur.matches.filter(m=>!rem.has(m.id));
+  const used=new Map(kept.map(m=>[m.id,m]));
+  const imported=[],importedIds=new Set(),mstats={};
+  let skipped=0,dup=0;
+  (file.matches||[]).forEach(fm=>{
+    if(!fm){skipped++;return}
+    const my=Number(fm.my),opp=Number(fm.opp),rid=idMap[fm.rid];
+    if(!rid||!Number.isInteger(my)||!Number.isInteger(opp)||my<0||opp<0||my>99||opp>99||!/^\d{4}-\d{2}-\d{2}$/.test(String(fm.date||''))){skipped++;return}
+    const m={id:fm.id,rid,my,opp,date:String(fm.date),old:isOld,ts:Number(fm.ts)||Date.now()};
+    /* mismo id y mismo contenido que uno que ya está: es el mismo partido (se importó dos veces) */
+    if(fm.id!=null&&used.has(fm.id)){
+      if(same(used.get(fm.id),m)){dup++;return}
+      m.id=newId();
+    }else if(fm.id==null)m.id=newId();
+    used.set(m.id,m);imported.push(m);importedIds.add(m.id);
+    if(m.id===fm.id&&file.mstats&&typeof file.mstats==='object'&&file.mstats[fm.id]&&typeof file.mstats[fm.id]==='object')mstats[m.id]=file.mstats[fm.id];
+  });
+  return{rivals,matches:kept.concat(imported),removed:removed.length,removedIds:removed.map(m=>m.id).filter(id=>!importedIds.has(id)),imported:imported.length,skipped,dup,newR,mstats};
+}
+window.IMPX={plan};
+
+const logAdd=(k,txt)=>{try{
+  const L=JSON.parse(localStorage.getItem('iator_log_v1')||'[]');
+  L.push(k==='Alta'?{t:new Date().toISOString(),k,n:txt}:{t:new Date().toISOString(),k,a:txt});
+  localStorage.setItem('iator_log_v1',JSON.stringify(L.slice(-500)));
+}catch(e){}};
+
+function histInfo(){
+  const h=db.hcfg&&typeof db.hcfg==='object'?db.hcfg:{};
+  const order=Array.isArray(h.order)&&h.order.length===2&&h.order.includes('new')&&h.order.includes('old')?h.order:['new','old'];
+  const nm=k=>String((h.names||{})[k]||'').trim()||(k==='new'?'EF27':'EF26');
+  const cnt=k=>db.matches.filter(m=>!!m.old===(k==='old')).length;
+  return{order,nm,cnt};
+}
+
+function ask(inp,d){
+  const H=histInfo();
+  modal(`<h2>¿A qué historial lo ponés?</h2>
+<small style="display:block;margin-bottom:12px">El archivo trae ${d.matches.length} partido(s) de ${d.rivals.length} rival(es).</small>
+${H.order.map(k=>`<button class="btn" style="width:100%;margin-bottom:8px" data-h="${k}">${esc(H.nm(k))} <small>· hoy tiene ${H.cnt(k)}</small></button>`).join('')}
+<label style="display:block;margin:12px 0 10px"><small>Qué hacer con lo que ya hay en ese historial</small>
+<select id="impmode"><option value="rep">Reemplazarlo por el archivo</option><option value="add">Sumar el archivo a lo que hay</option></select></label>
+<div class="row"><button class="btn alt" data-h="all">Reemplazar todo</button><button class="btn alt" data-h="x">Cancelar</button></div>
+<small style="display:block;margin-top:10px">“Reemplazar todo” es la importación de siempre: borra todo lo actual y deja solo lo del archivo.</small>`);
+  document.querySelectorAll('#m [data-h]').forEach(b=>{b.onclick=()=>choose(inp,d,b.dataset.h)});
+}
+
+function choose(inp,d,h){
+  if(h==='x'){closeM();inp.value='';return}
+  if(h==='all'){closeM();O0(inp);return}
+  const mode=document.querySelector('#m #impmode').value,H=histInfo(),name=H.nm(h);
+  let P;
+  try{P=plan({rivals:db.rivals,matches:db.matches},d,h,mode,uid)}catch(e){console.error('Importar:',e);alert('No se pudo leer el archivo. No se cambió nada.');return}
+  if(!P.imported){alert('No hay partidos para importar'+(P.dup?' (todos ya estaban cargados)':'')+(P.skipped?' ('+P.skipped+' sin rival o con datos inválidos)':'')+'. No se cambió nada.');return}
+  const msg=mode==='rep'
+    ?'Vas a reemplazar los '+P.removed+' partido(s) de '+name+' por los '+P.imported+' del archivo.\nEl otro historial no se toca.\n\n¿Continuar?'
+    :'Vas a sumar '+P.imported+' partido(s) a '+name+' (hoy tiene '+H.cnt(h)+').'+(P.dup?'\n'+P.dup+' ya estaban cargados y se omiten.':'')+'\n\n¿Continuar?';
+  if(!confirm(msg))return;
+  try{
+    db.rivals=P.rivals;db.matches=P.matches;
+    if(P.removedIds.length&&db.mstats&&window.mstatsDel)P.removedIds.forEach(id=>{if(id in db.mstats)window.mstatsDel(id)});
+    if(Object.keys(P.mstats).length){db.mstats=db.mstats&&typeof db.mstats==='object'?db.mstats:{};Object.assign(db.mstats,P.mstats)}
+    save();window.mstatsSync&&window.mstatsSync();
+    if(P.removed)logAdd('Eliminación','Importación a '+name+': se reemplazaron '+P.removed+' partido(s)');
+    logAdd('Alta','Importación a '+name+': '+P.imported+' partido(s) desde un respaldo');
+    closeM();inp.value='';render();
+    alert('Listo: '+P.imported+' partido(s) cargados en '+name+'.'+(P.removed?'\nSe reemplazaron '+P.removed+'.':'')+(P.newR?'\nRivales nuevos: '+P.newR+'.':'')+(P.dup?'\nYa estaban cargados: '+P.dup+'.':'')+(P.skipped?'\nOmitidos (sin rival o datos inválidos): '+P.skipped+'.':''));
+  }catch(e){console.error('Importar:',e);alert('Algo falló al aplicar el cambio. Revisá tus datos y, si hace falta, importá con "Reemplazar todo".')}
+}
+
+const O0=window.importData;
+window.importData=function(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let d;
+    try{d=JSON.parse(rd.result);if(!Array.isArray(d.rivals)||!Array.isArray(d.matches))throw 0}catch(e){alert('Archivo no válido');inp.value='';return}
+    try{ask(inp,d)}catch(e){console.error('Importar:',e);alert('No se pudo abrir el selector de historial: se usa la importación de siempre.');O0(inp)}
+  };
+  rd.readAsText(f);
+};
+})();
+</script>
 <script type="module">
 /* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
