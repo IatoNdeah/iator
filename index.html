@@ -41,8 +41,10 @@ input[type=color]{height:48px;padding:4px}
 .tabs .on{background:var(--acc);color:var(--on)}
 .sec{font-size:14px;margin:16px 0 4px;color:var(--acc);text-transform:uppercase;letter-spacing:.5px}
 .sec.old{color:#8b95a9}
+#cloud{position:fixed;right:12px;bottom:max(10px,env(safe-area-inset-bottom));font-size:12px;color:#8b95a9;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 10px;z-index:5}
 </style></head><body>
 <div id="app"></div>
+<div id="cloud">☁️ Conectando…</div>
 <script>
 const K='duelosfc_v1';
 const DEF={acc:'#22c55e',bg:'#0b0f17',name:'Iator',me:'Yo'};
@@ -52,7 +54,7 @@ db.cfg=Object.assign({},DEF,db.cfg||{});
 if(db.cfg.name==='Duelos FC')db.cfg.name='Iator';
 let view={r:null,tab:'all'};
 const $=s=>document.querySelector(s);
-const save=()=>localStorage.setItem(K,JSON.stringify(db));
+const save=()=>{localStorage.setItem(K,JSON.stringify(db));window.cloudSync&&window.cloudSync()};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
@@ -248,4 +250,121 @@ function importData(inp){
 
 applyTheme();render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
-</script></body></html>
+</script>
+
+<script type="module">
+/* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getDatabase,ref,set,remove,onValue} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+/* 👇 PEGÁ ACÁ TU CONFIG (Firebase → Configuración del proyecto → Tus apps → Web) */
+const firebaseConfig={
+  apiKey:"AIzaSyBZ2c9dnhEl6pjzrAIui-bKKsc_jwoIj9U",
+  authDomain:"iator-db2c9.firebaseapp.com",
+  databaseURL:"https://iator-db2c9-default-rtdb.firebaseio.com",
+  projectId:"iator-db2c9",
+  storageBucket:"iator-db2c9.firebasestorage.app",
+  messagingSenderId:"397322044767",
+  appId:"1:397322044767:web:470cb48e2789a1b97ea2ea"
+};
+
+const badge=document.getElementById('cloud');
+let online=false,fail=false;
+function paint(){
+  if(fail){badge.textContent='☁️ Error · revisá las reglas de Firebase';badge.style.color='#ef4444';return}
+  if(!navigator.onLine||!online){badge.textContent='☁️ Sin conexión · guardado en el dispositivo';badge.style.color='#eab308';return}
+  badge.textContent='☁️ Sincronizado';badge.style.color='#22c55e';
+}
+
+if(Object.values(firebaseConfig).some(v=>String(v).startsWith('PEGAR'))){
+  badge.textContent='☁️ Falta pegar el firebaseConfig';badge.style.color='#eab308';
+}else start();
+
+function start(){
+  const app=initializeApp(firebaseConfig);
+  const rt=getDatabase(app);
+  const P={r:'iator/rivals',m:'iator/matches'};
+  const KN=K+'_known';
+  const ser=o=>JSON.stringify(Object.keys(o).sort().reduce((a,k)=>(a[k]=o[k],a),{}));
+  const sRival=r=>({id:r.id,name:r.name,ts:r.ts||0});
+  const sMatch=m=>({id:m.id,rid:m.rid,my:m.my,opp:m.opp,date:m.date,old:!!m.old,ts:m.ts||0});
+  const onErr=e=>{console.error('Firebase:',e);fail=true;paint()};
+
+  let remR=null,remM=null,ready=false;
+  const sent={r:{},m:{}};   // lo último que sabemos que está en la nube
+
+  function remember(){
+    localStorage.setItem(KN,JSON.stringify([...Object.keys(sent.r),...Object.keys(sent.m)]));
+  }
+  function push(k,list){
+    const ids=new Set();
+    list.forEach(o=>{
+      ids.add(o.id);
+      const s=ser(o);
+      if(sent[k][o.id]!==s){sent[k][o.id]=s;set(ref(rt,P[k]+'/'+o.id),o).catch(onErr)}
+    });
+    Object.keys(sent[k]).forEach(id=>{
+      if(!ids.has(id)){delete sent[k][id];remove(ref(rt,P[k]+'/'+id)).catch(onErr)}
+    });
+  }
+  function sync(){
+    if(!ready)return;
+    db.rivals.forEach((r,i)=>{if(!r.ts)r.ts=Date.now()+i});
+    localStorage.setItem(K,JSON.stringify(db));
+    push('r',db.rivals.map(sRival));
+    push('m',db.matches.map(sMatch));
+    remember();
+  }
+  window.cloudSync=sync;
+
+  // "Soy X" (flip) es una preferencia de cada dispositivo: no se sube
+  const withFlips=(list,flips)=>list
+    .map(r=>({...r,flip:!!flips[r.id]}))
+    .sort((a,b)=>(a.ts||0)-(b.ts||0)||a.name.localeCompare(b.name));
+  const mark=()=>{
+    sent.r={};sent.m={};
+    Object.keys(remR).forEach(id=>sent.r[id]=ser(remR[id]));
+    Object.keys(remM).forEach(id=>sent.m[id]=ser(remM[id]));
+  };
+
+  function apply(){
+    const flips=Object.fromEntries(db.rivals.map(r=>[r.id,r.flip]));
+    db.rivals=withFlips(Object.values(remR),flips);
+    db.matches=Object.values(remM);
+    mark();
+    localStorage.setItem(K,JSON.stringify(db));
+    remember();render();paint();
+  }
+
+  function initial(){
+    const known=JSON.parse(localStorage.getItem(KN)||'null');
+    const lr=db.rivals.filter(r=>!remR[r.id]),lm=db.matches.filter(m=>!remM[m.id]);
+    const remoteEmpty=!Object.keys(remR).length&&!Object.keys(remM).length;
+    let keepR=lr,keepM=lm;
+    if(known===null){
+      // primera vez en este dispositivo
+      if(!remoteEmpty&&(lr.length||lm.length)){
+        if(!confirm('Este dispositivo tiene '+lm.length+' partido(s) y '+lr.length+' rival(es) que no están en la nube.\n\n¿Subirlos? (Aceptar = subir y juntar, Cancelar = descartarlos y usar solo lo de la nube)')){keepR=[];keepM=[]}
+      }
+    }else{
+      // lo que ya estaba sincronizado y ya no está en la nube se borró desde otro dispositivo
+      const ks=new Set(known);
+      keepR=lr.filter(r=>!ks.has(r.id));keepM=lm.filter(m=>!ks.has(m.id));
+    }
+    const flips=Object.fromEntries(db.rivals.map(r=>[r.id,r.flip]));
+    db.rivals=withFlips([...Object.values(remR),...keepR],flips);
+    db.matches=[...Object.values(remM),...keepM];
+    mark();
+    ready=true;
+    sync();render();paint();
+  }
+
+  const step=()=>{if(remR&&remM){ready?apply():initial()}};
+  onValue(ref(rt,P.r),s=>{remR=s.val()||{};fail=false;step()},onErr);
+  onValue(ref(rt,P.m),s=>{remM=s.val()||{};fail=false;step()},onErr);
+  onValue(ref(rt,'.info/connected'),s=>{online=s.val()===true;paint()});
+  addEventListener('online',paint);addEventListener('offline',paint);
+  paint();
+}
+</script>
+</bod
