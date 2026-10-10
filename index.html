@@ -650,7 +650,7 @@ window.render();
 </script>
 
 <style>
-/* ===== OCR DE CAPTURA v1 (solo estilos nuevos) ===== */
+/* ===== OCR DE CAPTURA v2 (solo estilos nuevos) ===== */
 .ocr-box{border:1px dashed var(--line);border-radius:12px;padding:10px;margin-bottom:12px}
 .ocr-box select{font-size:15px;padding:8px;margin:6px 0 8px}
 .ocr-box .btn{width:100%}
@@ -658,10 +658,16 @@ window.render();
 .xs input.ocr-dud{outline:2px solid #eab308;background:#eab30822}
 </style>
 <script>
-/* ===== OCR DE CAPTURA v1: lee una captura en el navegador (Tesseract.js) y SOLO rellena el formulario de estadísticas.
+/* ===== OCR DE CAPTURA v2: lee una captura en el navegador (Tesseract.js) y SOLO rellena el formulario de estadísticas.
    No guarda nada solo: vos revisás y tocás "Guardar" (que usa el guardado y las validaciones que ya existen).
-   La imagen no se sube ni se guarda: se procesa en memoria y se descarta. No toca rivals, matches ni Firebase. ===== */
+   La imagen no se sube ni se guarda: se procesa en memoria y se descarta. No toca rivals, matches ni Firebase.
+   Método principal: la pantalla de eFootball tiene la tabla siempre en el mismo lugar con 13 filas iguales,
+   así que se recorta cada número (izquierda/derecha de cada fila) y se lee por separado.
+   Si la captura tiene otra proporción, se usa un método alternativo que lee todo el texto y busca las etiquetas. ===== */
 (function(){
+/* posición de la tabla como fracción de la imagen (medida sobre capturas reales 20:9) */
+const LAYOUT={tx0:.34,tx1:.66,ty0:.2745,ty1:.852,cell:.27,score:[[.449,.480],[.520,.551]],sy:[.155,.222],ar:[2.05,2.45]};
+
 const norm=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z]/g,'');
 function lev(a,b){
   const m=a.length,n=b.length;if(!m)return n;if(!n)return m;
@@ -669,6 +675,19 @@ function lev(a,b){
   for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}
   return p[n];
 }
+/* texto leído -> número entero (0-999) o null */
+function clean(s){
+  s=String(s||'').replace(/%/g,'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/\D/g,'');
+  return s&&s.length<=3?Number(s):null;
+}
+/* varias lecturas -> {v, n}: valor más repetido y cuántas lecturas lo respaldan */
+function vote(arr){
+  const c={};arr.filter(x=>x!=null).forEach(x=>c[x]=(c[x]||0)+1);
+  let best=null,n=0;Object.keys(c).forEach(k=>{if(c[k]>n){n=c[k];best=Number(k)}});
+  return{v:best,n};
+}
+
+/* ---------- método alternativo (captura con otra proporción): leer todo y buscar etiquetas ---------- */
 const ALIAS={pos:['posesion'],shots:['tiros'],sot:['tirosalarco','disparosaporteria'],corn:['saquesdeesquina','corners'],fk:['tiroslibres'],saves:['atajadas']};
 function cands(){
   const out=[];
@@ -682,9 +701,6 @@ function matchLabel(text){
   return best&&best.ratio<=0.34?best:null;
 }
 const isNum=t=>/^[\dOoIl|]{1,3}%?$/.test(t)&&/\d/.test(t);
-const toNum=t=>Number(t.replace('%','').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1'));
-
-/* words: [{text,x0,y0,x1,y1,conf}] -> {rows:{k:{a,b,dud}}, score:{l,r}|null} ; a = número de la izquierda de la captura, b = el de la derecha */
 function parse(words){
   const ws=words.filter(w=>w.text&&w.text.trim()).map(w=>({...w,text:w.text.trim(),cy:(w.y0+w.y1)/2,h:w.y1-w.y0}));
   if(!ws.length)return{rows:{},score:null};
@@ -703,7 +719,7 @@ function parse(words){
     }
     const lx0=Math.min(...txt.map(w=>w.x0)),lx1=Math.max(...txt.map(w=>w.x1));
     const left=nums.filter(w=>(w.x0+w.x1)/2<lx0).pop(),right=nums.find(w=>(w.x0+w.x1)/2>lx1);
-    const row={a:left?toNum(left.text):null,b:right?toNum(right.text):null};
+    const row={a:left?clean(left.text):null,b:right?clean(right.text):null};
     const lowc=[left,right].some(w=>w&&w.conf!=null&&w.conf<60);
     row.dud=lab.ratio>0.18||row.a==null||row.b==null||lowc;
     row.ratio=lab.ratio;
@@ -711,19 +727,11 @@ function parse(words){
   });
   return{rows,score};
 }
-window.OCRX={parse,lev,norm,matchLabel};
+window.OCRX={parse,lev,norm,matchLabel,clean,vote,LAYOUT};
 
-/* Imagen -> canvas en blanco y negro (texto oscuro sobre fondo claro) para que el OCR lea mejor */
-async function prep(file){
-  let bmp;
-  try{bmp=await createImageBitmap(file)}catch(e){
-    bmp=await new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=no;i.src=u});
-  }
-  const w0=bmp.width,h0=bmp.height;
-  let sc=Math.max(1,Math.min(2.5,2000/w0));if(h0*sc>5000)sc=5000/h0;
-  const c=document.createElement('canvas');c.width=Math.round(w0*sc);c.height=Math.round(h0*sc);
-  const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(bmp,0,0,c.width,c.height);
-  if(bmp.close)bmp.close();
+/* ---------- imagen -> blanco y negro (texto oscuro sobre fondo claro), con margen blanco ---------- */
+function binarize(c,pad){
+  const x=c.getContext('2d',{willReadFrequently:true});
   const im=x.getImageData(0,0,c.width,c.height),d=im.data,N=c.width*c.height,g=new Uint8Array(N),hist=new Array(256).fill(0);
   let sum=0;
   for(let i=0;i<N;i++){const v=(d[i*4]*299+d[i*4+1]*587+d[i*4+2]*114)/1000|0;g[i]=v;hist[v]++;sum+=v}
@@ -732,7 +740,28 @@ async function prep(file){
   const darkBg=sum/N<128;
   for(let i=0;i<N;i++){const bright=g[i]>thr,o=(bright===darkBg)?0:255;d[i*4]=d[i*4+1]=d[i*4+2]=o;d[i*4+3]=255}
   x.putImageData(im,0,0);
-  return c;
+  const out=document.createElement('canvas');out.width=c.width+pad*2;out.height=c.height+pad*2;
+  const ox=out.getContext('2d');ox.fillStyle='#fff';ox.fillRect(0,0,out.width,out.height);ox.drawImage(c,pad,pad);
+  c.width=c.height=0;
+  return out;
+}
+async function loadBitmap(file){
+  try{return await createImageBitmap(file)}catch(e){
+    return await new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=no;i.src=u});
+  }
+}
+/* recorte (fracciones de la imagen) escalado a alto fijo; soft = pasa por una versión más chica (otra "vista" del mismo número) */
+function cellCanvas(bmp,fx0,fx1,fy0,fy1,soft){
+  const W=bmp.width,H=bmp.height,sx=fx0*W,sy=fy0*H,sw=(fx1-fx0)*W,sh=(fy1-fy0)*H;
+  const th=90,tw=Math.max(8,Math.round(sw*th/sh));
+  const c=document.createElement('canvas');c.width=tw;c.height=th;
+  const cx=c.getContext('2d',{willReadFrequently:true});
+  if(soft){
+    const h2=60,w2=Math.max(4,Math.round(sw*h2/sh)),s=document.createElement('canvas');s.width=w2;s.height=h2;
+    s.getContext('2d').drawImage(bmp,sx,sy,sw,sh,0,0,w2,h2);
+    cx.drawImage(s,0,0,w2,h2,0,0,tw,th);s.width=s.height=0;
+  }else cx.drawImage(bmp,sx,sy,sw,sh,0,0,tw,th);
+  return binarize(c,12);
 }
 function loadTess(){
   if(window.Tesseract)return Promise.resolve();
@@ -743,27 +772,84 @@ function loadTess(){
     document.head.appendChild(s);
   });
 }
-const toWords=data=>(data.words||[]).map(w=>({text:w.text,x0:w.bbox.x0,y0:w.bbox.y0,x1:w.bbox.x1,y1:w.bbox.y1,conf:w.confidence}));
 
-async function readImage(file,onProg){
-  await loadTess();
-  const canvas=await prep(file);
-  let worker;
+/* ---------- método principal: celda por celda ---------- */
+async function readByLayout(bmp,onProg){
+  const L=LAYOUT,keys=(window.MSTAT_FIELDS||[]).map(f=>f[0]);
+  const worker=await Tesseract.createWorker('eng');
   try{
-    worker=await Tesseract.createWorker('spa',1,{logger:m=>{if(m&&m.status==='recognizing text'&&onProg)onProg(m.progress)}});
+    const reads=async(box,psm,softs)=>{
+      await worker.setParameters({tessedit_pageseg_mode:psm});
+      const out=[];
+      for(const soft of softs){
+        const cv=cellCanvas(bmp,box[0],box[1],box[2],box[3],soft);
+        const {data}=await worker.recognize(cv);cv.width=cv.height=0;
+        out.push(clean(data.text));
+      }
+      return out;
+    };
+    /* devuelve {v, dud}: 2 lecturas que coinciden = confiable; si no, se agregan 2 más y se vota */
+    const readCell=async box=>{
+      let r=await reads(box,'7',[false,true]);
+      if(r[0]!=null&&r[0]===r[1])return{v:r[0],dud:false};
+      r=r.concat(await reads(box,'8',[false,true]));
+      const w=vote(r);
+      return{v:w.v,dud:w.v==null||w.n<3};
+    };
+    const p=(L.ty1-L.ty0)/keys.length,cw=L.cell*(L.tx1-L.tx0);
+    const rows={};let nulls=0;
+    for(let k=0;k<keys.length;k++){
+      if(onProg)onProg(k/(keys.length+1),'fila '+(k+1)+' de '+keys.length);
+      const y0=L.ty0+k*p+0.12*p,y1=L.ty0+k*p+0.84*p;
+      const A=await readCell([L.tx0,L.tx0+cw,y0,y1]),B=await readCell([L.tx1-cw,L.tx1,y0,y1]);
+      let a=A.v,b=B.v,dud=A.dud||B.dud;
+      const mx=keys[k]==='pos'?100:999;
+      if(a!=null&&a>mx){a=null;dud=true}if(b!=null&&b>mx){b=null;dud=true}
+      if(a==null)nulls++;if(b==null)nulls++;
+      rows[keys[k]]={a,b,dud:dud||a==null||b==null};
+    }
+    if(onProg)onProg(keys.length/(keys.length+1),'resultado');
+    const sc=[];
+    for(const sx of L.score){const c=await readCell([sx[0],sx[1],L.sy[0],L.sy[1]]);sc.push(c.v)}
+    const score=sc[0]!=null&&sc[1]!=null?{l:sc[0],r:sc[1]}:null;
+    return{rows,score,ok:nulls<=6};
+  }finally{try{await worker.terminate()}catch(e){}}
+}
+
+/* ---------- método alternativo: toda la imagen ---------- */
+const toWords=data=>(data.words||[]).map(w=>({text:w.text,x0:w.bbox.x0,y0:w.bbox.y0,x1:w.bbox.x1,y1:w.bbox.y1,conf:w.confidence}));
+async function readWhole(bmp,onProg){
+  /* se recorta la zona central, donde está la tabla, para que el fondo no confunda al lector */
+  const W=bmp.width,H=bmp.height,fx0=.25,fx1=.75,fy0=.14,fy1=.9;
+  const sw=(fx1-fx0)*W,sh=(fy1-fy0)*H;let sc=Math.max(1,Math.min(2.5,1600/sw));if(sh*sc>4500)sc=4500/sh;
+  const c=document.createElement('canvas');c.width=Math.round(sw*sc);c.height=Math.round(sh*sc);
+  c.getContext('2d',{willReadFrequently:true}).drawImage(bmp,fx0*W,fy0*H,sw,sh,0,0,c.width,c.height);
+  const cv=binarize(c,10);
+  const worker=await Tesseract.createWorker('spa',1,{logger:m=>{if(m&&m.status==='recognizing text'&&onProg)onProg(m.progress,'')}});
+  try{
     let best=null;
     for(const psm of ['6','11']){
       await worker.setParameters({tessedit_pageseg_mode:psm});
-      const {data}=await worker.recognize(canvas);
-      const p=parse(toWords(data));
-      if(!best||Object.keys(p.rows).length>Object.keys(best.rows).length)best=p;
+      const {data}=await worker.recognize(cv);
+      const r=parse(toWords(data));
+      if(!best||Object.keys(r.rows).length>Object.keys(best.rows).length)best=r;
       if(Object.keys(best.rows).length>=10)break;
     }
     return best;
-  }finally{
-    try{worker&&await worker.terminate()}catch(e){}
-    canvas.width=canvas.height=0;
-  }
+  }finally{try{await worker.terminate()}catch(e){}cv.width=cv.height=0}
+}
+
+async function readImage(file,onProg){
+  await loadTess();
+  const bmp=await loadBitmap(file);
+  try{
+    const ar=bmp.width/bmp.height,L=LAYOUT;
+    if(ar>=L.ar[0]&&ar<=L.ar[1]){
+      const r=await readByLayout(bmp,onProg);
+      if(r.ok){r.mode='celdas';return r}
+    }
+    const r=await readWhole(bmp,onProg);r.mode='general';return r;
+  }finally{if(bmp.close)bmp.close()}
 }
 
 function addBox(id){
@@ -783,7 +869,7 @@ function addBox(id){
     const f=ev.target.files&&ev.target.files[0];if(!f)return;
     const btn=q('go');btn.disabled=true;msg('Preparando la imagen…');
     try{
-      const res=await readImage(f,p=>msg('Leyendo… '+Math.round(p*100)+' %'));
+      const res=await readImage(f,(p,t)=>msg('Leyendo… '+Math.round(p*100)+' %'+(t?' ('+t+')':'')));
       const p=PM(m,r);let leftMe=q('side').value==='me',note='';
       if(res.score){
         const {l,r:rr}=res.score;
@@ -800,8 +886,8 @@ function addBox(id){
         const row=res.rows[k],mx=k==='pos'?100:999;
         let a=row.a,b=row.b,dud=row.dud;
         if(a!=null&&a>mx){a=null;dud=true}if(b!=null&&b>mx){b=null;dud=true}
-        const L=leftMe?a:b,R=leftMe?b:a;
-        put(k,'l',L,dud);put(k,'r',R,dud);
+        const Lf=leftMe?a:b,Rt=leftMe?b:a;
+        put(k,'l',Lf,dud);put(k,'r',Rt,dud);
         n++;if(dud)d++;
       });
       /* mismas reglas lógicas que ya usa el guardado: se marcan en amarillo si no cierran */
@@ -812,8 +898,8 @@ function addBox(id){
         if(v('shots',s)!=null&&v('sot',s)!=null&&v('sot',s)>v('shots',s)){mark('shots',s);mark('sot',s);d++}
         if(v('pass',s)!=null&&v('passok',s)!=null&&v('passok',s)>v('pass',s)){mark('pass',s);mark('passok',s);d++}
       });
-      msg(n?'Leí '+n+' de '+(window.MSTAT_FIELDS||[]).length+' estadísticas.'+(d?' Lo que quedó en amarillo es dudoso o está vacío: revisalo contra la captura.':'')+note+' Todavía no se guardó nada: revisá y tocá Guardar.'
-            :'No pude leer estadísticas en esa imagen. Probá con una captura más nítida o cargá a mano.');
+      msg(n?'Leí '+n+' de '+(window.MSTAT_FIELDS||[]).length+' estadísticas'+(res.mode==='general'?' (con el método general: esta captura tiene otra proporción, así que revisá bien).':'.')+(d?' Lo que quedó en amarillo es dudoso o está vacío: revisalo contra la captura.':'')+note+' Todavía no se guardó nada: revisá y tocá Guardar.'
+            :'No pude leer estadísticas en esa imagen. Probá con una captura completa de la pantalla o cargá a mano.');
     }catch(e){
       console.error('OCR:',e);msg('No se pudo leer la captura: '+(e&&e.message?e.message:'error')+'. Podés cargar a mano.');
     }finally{
