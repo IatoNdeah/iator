@@ -1031,6 +1031,145 @@ window.importData=function(inp){
 };
 })();
 </script>
+<style>
+/* ===== EVOLUCIÓN v1 (solo estilos nuevos) ===== */
+.k-ev .fh{box-shadow:inset 4px 0 0 var(--gf)}
+.ev h3{font-size:14px;margin:14px 0 6px}.ev h3:first-of-type{margin-top:4px}
+.ev svg{display:block;width:100%;height:auto;touch-action:pan-y;-webkit-user-select:none;user-select:none}
+.ev .evb{overflow-x:auto;-webkit-overflow-scrolling:touch}.ev .evb svg{width:auto;min-width:100%;touch-action:auto}
+.ev .evi{font-size:13px;min-height:34px;margin-top:6px;line-height:1.35}
+.ev .evl{font-size:12px;margin-bottom:4px}.ev .evl i{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 4px 0 10px;vertical-align:-1px}.ev .evl i:first-child{margin-left:0}
+.ev .tabs{margin-bottom:8px}
+</style>
+<script>
+/* ===== EVOLUCIÓN v1: sección plegable con (1) balance acumulado partido a partido y (2) goles a favor y en contra por mes.
+   Solo LEE los partidos que ya hay (no modifica nada) y respeta "Soy X". En cada rival sigue la pestaña elegida (Todos / EF27 / EF26);
+   en la pantalla principal tiene su propio filtro. Gráficos dibujados con SVG propio, sin librerías externas. ===== */
+(function(){
+const V='#22c55e',D='#ef4444',E='#eab308',GF='#22d3ee',GO='#fb923c',MU='#8b95a9';
+const MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const KU='iator_ev_ui';
+const ld=()=>{try{return JSON.parse(localStorage.getItem(KU))||{}}catch(e){return{}}};
+let st=ld(),homeF='all';
+
+/* ---------- cálculo (puro) ---------- */
+function series(ms){
+  const a=ms.filter(m=>m&&m.date).slice().sort((x,y)=>String(x.date).localeCompare(String(y.date))||(x.ts||0)-(y.ts||0));
+  let b=0;
+  return a.map((m,i)=>{const r=Math.sign(m.my-m.opp);b+=r;return{i,b,r,m}});
+}
+function monthly(ms){
+  const g={};
+  ms.forEach(m=>{if(!m||!m.date)return;const k=String(m.date).slice(0,7),o=g[k]||(g[k]={k,gf:0,gc:0,n:0});o.gf+=m.my;o.gc+=m.opp;o.n++});
+  return Object.values(g).sort((x,y)=>x.k.localeCompare(y.k));
+}
+
+/* ---------- dibujo (devuelve texto SVG) ---------- */
+const W=320,H=190,PL=30,PR=10,PT=12,PB=22;
+function lineGeom(S){
+  const n=S.length,vals=S.map(p=>p.b);
+  let mn=Math.min(0,...vals),mx=Math.max(0,...vals);if(mn===mx)mx=mn+1;
+  const x=i=>n>1?PL+i*(W-PL-PR)/(n-1):(PL+W-PR)/2,y=v=>PT+(mx-v)*(H-PT-PB)/(mx-mn);
+  return{n,mn,mx,x,y,y0:y(0)};
+}
+function lineSVG(S,dateTxt){
+  const g=lineGeom(S),pts=S.map(p=>[g.x(p.i),g.y(p.b)]);
+  const off=Math.min(1,Math.max(0,(g.y0-PT)/(H-PT-PB)));
+  const path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const area=path+' L'+pts[pts.length-1][0].toFixed(1)+' '+g.y0.toFixed(1)+' L'+pts[0][0].toFixed(1)+' '+g.y0.toFixed(1)+' Z';
+  const dots=g.n<=80?S.map((p,i)=>`<circle cx="${pts[i][0].toFixed(1)}" cy="${pts[i][1].toFixed(1)}" r="2.6" fill="${p.r>0?V:p.r<0?D:E}"/>`).join(''):'';
+  const showZero=g.mn===0?true:g.mx===0?false:(Math.abs(g.y0-g.y(g.mx))>=11&&Math.abs(g.y0-g.y(g.mn))>=11);
+  const lab=(v,yy)=>`<text x="${PL-4}" y="${(yy+3).toFixed(1)}" font-size="9" fill="${MU}" text-anchor="end">${v>0?'+':''}${v}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Balance acumulado">
+<defs><linearGradient id="evg" gradientUnits="userSpaceOnUse" x1="0" y1="${PT}" x2="0" y2="${H-PB}">
+<stop offset="0" stop-color="${V}"/><stop offset="${off.toFixed(4)}" stop-color="${V}"/><stop offset="${off.toFixed(4)}" stop-color="${D}"/><stop offset="1" stop-color="${D}"/></linearGradient></defs>
+<line x1="${PL}" x2="${W-PR}" y1="${g.y0.toFixed(1)}" y2="${g.y0.toFixed(1)}" stroke="${MU}" stroke-opacity=".6" stroke-dasharray="3 3"/>
+${lab(g.mx,g.y(g.mx))}${g.mn<0?lab(g.mn,g.y(g.mn)):''}${showZero?lab(0,g.y0):''}
+<path d="${area}" fill="url(#evg)" fill-opacity=".16"/>
+<path d="${path}" fill="none" stroke="url(#evg)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+${dots}
+<g id="evm" style="display:none"><line y1="${PT}" y2="${H-PB}" stroke="${MU}" stroke-opacity=".7"/><circle r="4.5" fill="none" stroke="#fff" stroke-width="1.5"/></g>
+<text x="${PL}" y="${H-6}" font-size="9" fill="${MU}">${dateTxt[0]}</text><text x="${W-PR}" y="${H-6}" font-size="9" fill="${MU}" text-anchor="end">${dateTxt[1]}</text>
+<rect id="evr" x="0" y="0" width="${W}" height="${H}" fill="transparent"/></svg>`;
+}
+function barsSVG(M){
+  const GW=44,BW=15,h=170,pt=16,pb=26,w=Math.max(320,M.length*GW+8),mx=Math.max(1,...M.flatMap(o=>[o.gf,o.gc])),Y=v=>pt+(mx-v)*(h-pt-pb)/mx;
+  const bars=M.map((o,i)=>{
+    const x0=4+i*GW+(GW-2*BW-3)/2,mk=o.k,lbl=MES[+mk.slice(5,7)-1]+' '+mk.slice(2,4);
+    const bar=(x,v,c)=>`<rect x="${x.toFixed(1)}" y="${Y(v).toFixed(1)}" width="${BW}" height="${Math.max(v?1.5:0,h-pb-Y(v)).toFixed(1)}" rx="2" fill="${c}"/><text x="${(x+BW/2).toFixed(1)}" y="${(Y(v)-3).toFixed(1)}" font-size="9" fill="#e8ecf3" text-anchor="middle">${v}</text>`;
+    return bar(x0,o.gf,GF)+bar(x0+BW+3,o.gc,GO)+`<text x="${(x0+BW+1.5).toFixed(1)}" y="${h-12}" font-size="9" fill="${MU}" text-anchor="middle">${lbl}</text><text x="${(x0+BW+1.5).toFixed(1)}" y="${h-2}" font-size="8" fill="${MU}" text-anchor="middle">${o.n} PJ</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Goles por mes"><line x1="0" x2="${w}" y1="${h-pb}" y2="${h-pb}" stroke="${MU}" stroke-opacity=".5"/>${bars}</svg>`;
+}
+window.EVOX={series,monthly,lineSVG,barsSVG,lineGeom};
+
+/* ---------- integración con la página ---------- */
+function histInfo(){
+  const h=db.hcfg&&typeof db.hcfg==='object'?db.hcfg:{},nm=k=>String((h.names||{})[k]||'').trim()||(k==='new'?'EF27':'EF26');
+  const order=Array.isArray(h.order)&&h.order.length===2&&h.order.includes('new')&&h.order.includes('old')?h.order:['new','old'];
+  return{nm,order};
+}
+const short=d=>{const p=String(d).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0].slice(2):d};
+const tabOf=(ms,t)=>t==='new'?ms.filter(m=>!m.old):t==='old'?ms.filter(m=>m.old):ms;
+
+function content(box,r){
+  const HI=histInfo();
+  const tab=r?view.tab:homeF;
+  const base=r?db.matches.filter(m=>m.rid===r.id):db.matches;
+  const ms=pmAll(tabOf(base,tab)),S=series(ms),M=monthly(ms);
+  const tname=tab==='all'?'Todos':HI.nm(tab);
+  let h='<div class="card ev" style="margin-bottom:0">';
+  if(!r)h+=`<div class="tabs">${[['all','Todos'],...HI.order.map(k=>[k,HI.nm(k)])].map(t=>`<button class="${tab===t[0]?'on':''}" data-f="${t[0]}">${esc(t[1])}</button>`).join('')}</div>`;
+  else h+=`<small style="display:block;margin-bottom:4px">Mostrando: ${esc(tname)} (cambia con las pestañas de arriba)</small>`;
+  if(S.length<2){
+    h+='<p class="muted" style="margin:6px 0">Cargá al menos 2 partidos para ver la evolución.</p></div>';box.innerHTML=h;wire(box,r,S);return;
+  }
+  h+=`<h3>Balance acumulado</h3><small style="display:block;margin-bottom:4px">Sube con cada victoria y baja con cada derrota. Tocá el gráfico para ver cada partido.</small>${lineSVG(S,[short(S[0].m.date),short(S[S.length-1].m.date)])}<div class="evi" id="evi"></div>`;
+  h+=`<h3>Goles por mes</h3><div class="evl"><i style="background:${GF}"></i>A favor<i style="background:${GO}"></i>En contra</div><div class="evb" id="evb">${barsSVG(M)}</div></div>`;
+  box.innerHTML=h;wire(box,r,S);
+}
+function info(S,i){
+  const p=S[i],m=p.m,r=rv(m.rid),HI=histInfo(),res=p.r>0?'Victoria':p.r<0?'Derrota':'Empate',c=p.r>0?V:p.r<0?D:E;
+  return `<b style="color:${c}">${res}</b> · ${short(m.date)} · ${esc(r?meN(r):'')} ${m.my}-${m.opp} ${esc(r?opN(r):'')}<br><small>${esc(HI.nm(m.old?'old':'new'))} · balance ${sg(p.b)}</small>`;
+}
+function wire(box,r,S){
+  box.querySelectorAll('[data-f]').forEach(b=>{b.onclick=()=>{homeF=b.dataset.f;content(box,r)}});
+  const rect=box.querySelector('#evr'),inf=box.querySelector('#evi');if(!rect||!inf)return;
+  const svg=rect.ownerSVGElement,mk=svg.querySelector('#evm'),g=lineGeom(S);
+  const show=i=>{
+    mk.style.display='';mk.querySelector('line').setAttribute('x1',g.x(i));mk.querySelector('line').setAttribute('x2',g.x(i));
+    const c=mk.querySelector('circle');c.setAttribute('cx',g.x(i));c.setAttribute('cy',g.y(S[i].b));
+    inf.innerHTML=info(S,i);
+  };
+  const at=ev=>{const bb=svg.getBoundingClientRect(),px=(ev.clientX-bb.left)/bb.width*W;
+    show(g.n>1?Math.max(0,Math.min(g.n-1,Math.round((px-PL)/((W-PL-PR)/(g.n-1))))):0)};
+  rect.addEventListener('pointerdown',at);rect.addEventListener('pointermove',e=>{if(e.pressure>0||e.pointerType==='mouse')at(e)});
+  show(g.n-1);
+  const bw=box.querySelector('#evb');if(bw)bw.scrollLeft=bw.scrollWidth;
+}
+
+function build(r){
+  const f=document.createElement('div'),h=document.createElement('div'),b=document.createElement('div'),i=document.createElement('div'),box=document.createElement('div');
+  f.className='fold k-ev';h.className='fh';b.className='fb';i.className='fi';h.setAttribute('role','button');h.tabIndex=0;
+  const paint=()=>{const o=!!st.o;f.classList.toggle('open',o);h.setAttribute('aria-expanded',o);
+    h.innerHTML=`<div><b>📈 Evolución</b><br><small>${o?'Presionar para ocultar':'Presionar para ver'}</small></div><span class="ar">${o?'⬆':'⬇'}</span>`};
+  const tg=()=>{st.o=!st.o;try{localStorage.setItem(KU,JSON.stringify(st))}catch(e){}paint();if(st.o){const bw=box.querySelector('#evb');if(bw)bw.scrollLeft=bw.scrollWidth}};
+  h.addEventListener('click',tg);h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg()}});
+  paint();content(box,r);
+  i.appendChild(box);b.appendChild(i);f.append(h,b);
+  return f;
+}
+function inject(){
+  const app=$('#app');if(!app||app.querySelector('.k-ev'))return;
+  const r=view.r&&rv(view.r);
+  const anchor=[...app.querySelectorAll('section.card')].find(c=>{const t=c.querySelector('h2');return t&&(r?/^Estad/.test(t.textContent):t.textContent.trim()==='Total general')});
+  if(anchor)anchor.insertAdjacentElement('afterend',build(r||null));
+}
+const R6=window.render;
+window.render=function(){R6();try{inject()}catch(e){console.error('Evolución:',e)}};
+window.render();
+})();
+</script>
 <script type="module">
 /* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
