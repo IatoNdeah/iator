@@ -494,6 +494,161 @@ window.render();
 })();
 </script>
 
+<style>
+/* ===== ESTADÍSTICAS DE PARTIDO v1 (solo estilos nuevos) ===== */
+.xs{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:8px;align-items:center;margin-bottom:6px}
+.xs input{margin:0;text-align:center;font-size:18px;padding:10px 4px}
+.xs span{text-align:center;font-size:13px;color:#8b95a9;line-height:1.2}
+.xs.xh b{text-align:center;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xr{display:grid;grid-template-columns:48px 1fr 48px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.xv{font-size:17px;text-align:center;color:#8b95a9}
+.xv.xw{color:#fff;font-weight:700}
+.xl{text-align:center;font-size:13px;color:#8b95a9}
+.xb{display:flex;justify-content:space-between;height:6px;border-radius:3px;overflow:hidden;background:var(--line);margin-top:4px}
+.xb i{display:block;height:100%}
+.xbtn{opacity:.4}
+.xbtn.on{opacity:1;background:#22d3ee22;border-radius:8px}
+</style>
+<script>
+/* ===== ESTADÍSTICAS DE PARTIDO v1: carga manual por partido. Se guardan aparte en db.mstats; no modifican rivals ni matches. ===== */
+(function(){
+const FIELDS=[['pos','Posesión del balón'],['shots','Disparos'],['sot','Disparos al arco'],['fouls','Faltas'],['offs','Fueras de juego'],['corn','Tiros de esquina'],['fk','Tiros libres'],['pass','Pases'],['passok','Pases completados'],['cross','Centros'],['icpt','Pases interceptados'],['tack','Entradas'],['saves','Paradas']];
+window.MSTAT_FIELDS=FIELDS;
+const KD='iator_mstats_del';
+const MS=()=>db.mstats&&typeof db.mstats==='object'&&!Array.isArray(db.mstats)?db.mstats:(db.mstats={});
+const mx=k=>k==='pos'?100:999;
+const q=()=>{try{return JSON.parse(localStorage.getItem(KD)||'[]')}catch(e){return[]}};
+
+/* Alta / baja de estadísticas (la baja se avisa a la nube desde el módulo aparte) */
+window.mstatsPut=function(id,rec){
+  MS()[id]=rec;
+  try{localStorage.setItem(KD,JSON.stringify(q().filter(x=>x!==id)))}catch(e){}
+  save();window.mstatsSync&&window.mstatsSync();
+};
+window.mstatsDel=function(id){
+  const m=MS();if(!(id in m))return;
+  delete m[id];
+  try{const l=q();if(!l.includes(id))l.push(id);localStorage.setItem(KD,JSON.stringify(l))}catch(e){}
+  save();window.mstatsFlush&&window.mstatsFlush();
+};
+
+/* a = lado de "my" del partido, b = lado de "opp" (igual que los goles); "Soy X" solo cambia cómo se muestra */
+const side=(o,s,f)=>{if(!o)return null;const v=o[(s==='l')!==f?'a':'b'];return v==null?null:v};
+const hasAny=rec=>!!rec&&FIELDS.some(([k])=>rec[k]);
+
+window.statsForm=function(id){
+  const m=db.matches.find(x=>x.id===id),r=m&&rv(m.rid);if(!m||!r)return;
+  const rec=MS()[id]||{},f=!!r.flip,p=PM(m,r);
+  const inp=(k,s)=>{const v=side(rec[k],s,f);return `<input data-k="${k}" data-s="${s}" type="number" inputmode="numeric" min="0" max="${mx(k)}" value="${v==null?'':v}">`};
+  modal(`<h2>Estadísticas del partido</h2>
+<small style="display:block;margin-bottom:10px">${esc(meN(r))} ${p.my} - ${p.opp} ${esc(opN(r))} · ${fdate(m.date)}<br>Dejá vacío lo que no tengas. Solo números.</small>
+<div class="xs xh"><b class="gf">${esc(meN(r))}</b><span></span><b class="gc">${esc(opN(r))}</b></div>
+${FIELDS.map(([k,l])=>`<div class="xs">${inp(k,'l')}<span>${l}</span>${inp(k,'r')}</div>`).join('')}
+<div class="row" style="margin-top:14px"><button class="btn alt" onclick="closeM()">Cancelar</button><button class="btn" onclick="saveStats('${id}')">Guardar</button></div>`);
+  document.activeElement&&document.activeElement.blur&&document.activeElement.blur();
+  /* comodidad: si cargás la posesión de un lado y el otro está vacío, propone 100 - valor */
+  document.querySelectorAll('#m [data-k="pos"]').forEach(e=>e.addEventListener('change',()=>{
+    const o=document.querySelector('#m [data-k="pos"][data-s="'+(e.dataset.s==='l'?'r':'l')+'"]'),v=Number(e.value);
+    if(o&&o.value===''&&e.value!==''&&v>=0&&v<=100)o.value=100-v;
+  }));
+};
+
+window.saveStats=function(id){
+  const m=db.matches.find(x=>x.id===id),r=m&&rv(m.rid);if(!m||!r)return;
+  const f=!!r.flip,rec={};let bad=false;
+  const num=(el,max)=>{const v=el.value.trim();if(v==='')return null;const n=Number(v);return Number.isInteger(n)&&n>=0&&n<=max?n:NaN};
+  FIELDS.forEach(([k])=>{
+    const x=num(document.querySelector('#m [data-k="'+k+'"][data-s="l"]'),mx(k)),y=num(document.querySelector('#m [data-k="'+k+'"][data-s="r"]'),mx(k));
+    if(Number.isNaN(x)||Number.isNaN(y)){bad=true;return}
+    if(x===null&&y===null)return;
+    const o={};if(x!==null)o[f?'b':'a']=x;if(y!==null)o[f?'a':'b']=y;rec[k]=o;
+  });
+  if(bad){alert('Revisá los valores: solo números enteros (la posesión va de 0 a 100).');return}
+  if(!hasAny(rec)){
+    if(hasAny(MS()[id])){if(confirm('Dejaste todo vacío. ¿Borrar las estadísticas de este partido?')){mstatsDel(id);closeM();render()}return}
+    alert('No cargaste ningún valor.');return;
+  }
+  const W=[],g=(k,s)=>rec[k]&&rec[k][s];
+  if(rec.pos&&rec.pos.a!=null&&rec.pos.b!=null&&rec.pos.a+rec.pos.b!==100)W.push('La posesión de los dos lados no suma 100 %.');
+  ['a','b'].forEach(s=>{
+    if(g('shots',s)!=null&&g('sot',s)!=null&&g('sot',s)>g('shots',s))W.push('Disparos al arco es mayor que Disparos.');
+    if(g('pass',s)!=null&&g('passok',s)!=null&&g('passok',s)>g('pass',s))W.push('Pases completados es mayor que Pases.');
+  });
+  if(W.length&&!confirm('Hay valores raros:\n• '+[...new Set(W)].join('\n• ')+'\n\n¿Guardar igual?'))return;
+  rec.ts=Date.now();
+  mstatsPut(id,rec);closeM();render();statsView(id);
+};
+
+window.statsView=function(id){
+  const m=db.matches.find(x=>x.id===id),r=m&&rv(m.rid);if(!m||!r)return;
+  const rec=MS()[id];if(!hasAny(rec)){statsForm(id);return}
+  const f=!!r.flip,p=PM(m,r);
+  const rows=FIELDS.filter(([k])=>rec[k]).map(([k,l])=>{
+    const x=side(rec[k],'l',f),y=side(rec[k],'r',f),t=(x||0)+(y||0),both=x!=null&&y!=null&&t>0;
+    const px=both?x*100/t:0,py=both?y*100/t:0,u=k==='pos'?'%':'';
+    return `<div class="xr"><div class="xv${x!=null&&(y==null||x>y)?' xw':''}">${x==null?'–':x+u}</div><div class="xl">${l}<div class="xb"><i style="width:${px}%;background:var(--gf)"></i><i style="width:${py}%;background:var(--go)"></i></div></div><div class="xv${y!=null&&(x==null||y>x)?' xw':''}">${y==null?'–':y+u}</div></div>`;
+  }).join('');
+  modal(`<h2>Estadísticas del partido</h2>
+<small style="display:block;margin-bottom:6px"><b class="gf">${esc(meN(r))}</b> ${p.my} - ${p.opp} <b class="gc">${esc(opN(r))}</b> · ${fdate(m.date)}</small>
+${rows}
+<div class="row" style="margin-top:14px"><button class="btn alt" onclick="closeM()">Cerrar</button><button class="btn" onclick="statsForm('${id}')">✏️ Editar</button></div>
+<div class="row"><button class="btn alt" style="width:100%" onclick="statsBorrar('${id}')">🗑 Borrar estadísticas</button></div>`);
+  document.activeElement&&document.activeElement.blur&&document.activeElement.blur();
+};
+window.statsBorrar=function(id){
+  if(!confirm('¿Borrar las estadísticas de este partido? El partido no se toca.'))return;
+  mstatsDel(id);closeM();render();
+};
+
+/* Si se intercambian los goles (⇄), se intercambian también los lados de las estadísticas */
+const S0=window.swapMatch;
+window.swapMatch=function(id){
+  const m=db.matches.find(x=>x.id===id),rec=m&&MS()[id];
+  const res=S0.apply(this,arguments);
+  try{
+    if(hasAny(rec)){
+      const n={ts:Date.now()};
+      FIELDS.forEach(([k])=>{const o=rec[k];if(o){const z={};if(o.a!=null)z.b=o.a;if(o.b!=null)z.a=o.b;n[k]=z}});
+      mstatsPut(id,n);
+    }
+  }catch(e){console.error('Estadísticas:',e)}
+  return res;
+};
+/* Si se borra un partido o un rival, se borran sus estadísticas */
+const D0=window.delMatch;
+window.delMatch=function(id){
+  const res=D0.apply(this,arguments);
+  try{if(MS()[id]&&!db.matches.some(x=>x.id===id))mstatsDel(id)}catch(e){console.error('Estadísticas:',e)}
+  return res;
+};
+const X0=window.delRival;
+window.delRival=function(id){
+  const ids=db.matches.filter(m=>m.rid===id).map(m=>m.id);
+  const res=X0.apply(this,arguments);
+  try{if(!rv(id))ids.forEach(i=>{if(MS()[i])mstatsDel(i)})}catch(e){console.error('Estadísticas:',e)}
+  return res;
+};
+
+/* Botón 📊 en cada partido del historial */
+function inject(){
+  const ms=MS();
+  document.getElementById('app').querySelectorAll('.m').forEach(row=>{
+    const sw=row.querySelector('button[onclick^="swapMatch"]');
+    if(!sw||row.querySelector('.xbtn'))return;
+    const id=((sw.getAttribute('onclick')||'').match(/'([^']+)'/)||[])[1];if(!id)return;
+    const b=document.createElement('button');
+    b.className='ic xbtn'+(hasAny(ms[id])?' on':'');b.textContent='📊';
+    b.title=hasAny(ms[id])?'Ver estadísticas':'Cargar estadísticas';
+    b.setAttribute('onclick',"statsView('"+id+"')");
+    sw.parentNode.insertBefore(b,sw);
+  });
+}
+const R5=window.render;
+window.render=function(){R5();try{inject()}catch(e){console.error('Estadísticas:',e)}};
+window.render();
+})();
+</script>
+
 <script type="module">
 /* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -607,6 +762,97 @@ function start(){
   onValue(ref(rt,'.info/connected'),s=>{online=s.val()===true;paint()});
   addEventListener('online',paint);addEventListener('offline',paint);
   paint();
+}
+</script>
+<script type="module">
+/* ===== ESTADÍSTICAS DE PARTIDO v1: sincronización del nodo iator/mstats. Módulo aparte: no modifica el módulo de arriba. ===== */
+import {getApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getDatabase,ref,set,remove,onValue} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+let app=null;
+try{app=getApp()}catch(e){console.warn('Estadísticas: sin Firebase, quedan solo en el dispositivo')}
+if(app){
+  const rt=getDatabase(app),P='iator/mstats',KS='iator_mstats_known',KD='iator_mstats_del';
+  const jl=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
+  const ser=o=>JSON.stringify(o,(k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.keys(v).sort().reduce((a,x)=>(a[x]=v[x],a),{}):v);
+  const L=()=>db.mstats&&typeof db.mstats==='object'&&!Array.isArray(db.mstats)?db.mstats:(db.mstats={});
+  const ok=(v,mx)=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=mx;
+  function clean(o){
+    if(!o||typeof o!=='object')return null;
+    const r={ts:Number(o.ts)||0};let n=0;
+    (window.MSTAT_FIELDS||[]).forEach(([k])=>{
+      const v=o[k];if(!v||typeof v!=='object')return;
+      const mx=k==='pos'?100:999,x={};
+      if(ok(v.a,mx))x.a=v.a;if(ok(v.b,mx))x.b=v.b;
+      if(x.a!==undefined||x.b!==undefined){r[k]=x;n++}
+    });
+    return n?r:null;
+  }
+
+  const bd=document.createElement('div');
+  bd.id='cloud2';
+  bd.style.cssText='position:fixed;right:12px;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);font-size:12px;color:#ef4444;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 10px;z-index:5;display:none';
+  bd.textContent='📊 Estadísticas: error · revisá las reglas de Firebase';
+  document.body.appendChild(bd);
+  let failed=false;
+  const paint=()=>{bd.style.display=failed?'block':'none'};
+  const onErr=e=>{console.error('Estadísticas (Firebase):',e);failed=true;paint()};
+
+  const known=new Set(jl(KS,[]));
+  const sent={};
+  let ready=false;
+  const saveKnown=()=>{try{localStorage.setItem(KS,JSON.stringify([...known]))}catch(e){}};
+  const pushOne=(id,rec)=>{const s=ser(rec);if(sent[id]===s)return;sent[id]=s;set(ref(rt,P+'/'+id),rec).catch(onErr)};
+
+  function flushDel(){
+    jl(KD,[]).forEach(id=>{
+      delete sent[id];known.delete(id);
+      remove(ref(rt,P+'/'+id)).then(()=>{
+        try{localStorage.setItem(KD,JSON.stringify(jl(KD,[]).filter(x=>x!==id)))}catch(e){}
+      }).catch(onErr);
+    });
+    saveKnown();
+  }
+
+  function merge(R){
+    const m=L(),del=new Set(jl(KD,[]));let changed=false;
+    /* nube -> dispositivo */
+    Object.keys(R).forEach(id=>{
+      if(del.has(id))return;
+      const r=clean(R[id]);if(!r)return;
+      sent[id]=ser(r);
+      const l=m[id]?clean(m[id]):null;
+      if(!l){if(m[id]||!known.has(id)){m[id]=r;changed=true}}
+      else if((r.ts||0)>(l.ts||0)&&ser(r)!==ser(l)){m[id]=r;changed=true}
+      known.add(id);
+    });
+    /* dispositivo -> nube */
+    Object.keys(m).forEach(id=>{
+      const l=clean(m[id]);if(!l)return;
+      if(R[id]===undefined){
+        if(known.has(id)&&!del.has(id)){delete m[id];known.delete(id);changed=true}   /* se borró desde otro dispositivo */
+        else pushOne(id,l);                                                           /* es nuevo de este dispositivo */
+      }else{
+        const r=clean(R[id]);
+        if(r&&ser(r)!==ser(l)&&(l.ts||0)>(r.ts||0))pushOne(id,l);
+      }
+    });
+    saveKnown();
+    if(changed){try{localStorage.setItem(K,JSON.stringify(db))}catch(e){}render()}
+  }
+
+  window.mstatsSync=()=>{
+    if(!ready)return;
+    const m=L();
+    Object.keys(m).forEach(id=>{const c=clean(m[id]);if(c)pushOne(id,c)});
+  };
+  window.mstatsFlush=()=>{if(ready)flushDel()};
+
+  onValue(ref(rt,P),s=>{
+    failed=false;paint();
+    merge(s.val()||{});
+    if(!ready){ready=true;flushDel()}
+  },onErr);
 }
 </script>
 </body></html>
