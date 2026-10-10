@@ -30,7 +30,8 @@ input,select{width:100%;background:var(--bg);border:1px solid var(--line);color:
 input[type=color]{height:48px;padding:4px}
 #m{position:fixed;inset:0;background:#000a;display:flex;align-items:flex-end;justify-content:center;z-index:9}
 #m>div{background:var(--card);width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:18px 18px 28px;max-height:90vh;overflow:auto}
-.sc{display:flex;align-items:center;gap:10px}.sc label{flex:1}.sc input{text-align:center;font-size:28px}
+.sc{display:flex;align-items:center;gap:8px}.sc label{flex:1;min-width:0}.sc input{text-align:center;font-size:28px}
+.sc .btn{padding:10px 12px;margin-top:6px}
 .m{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
 .m.old{opacity:.65}
 .ic{background:none;border:0;font-size:18px;padding:6px}
@@ -44,7 +45,7 @@ input[type=color]{height:48px;padding:4px}
 <div id="app"></div>
 <script>
 const K='duelosfc_v1';
-const DEF={acc:'#22c55e',bg:'#0b0f17',name:'Duelos FC'};
+const DEF={acc:'#22c55e',bg:'#0b0f17',name:'Duelos FC',me:'Yo'};
 const PRE=[['Verde','#22c55e','#0b0f17'],['Azul','#3b82f6','#0a1020'],['Rojo','#ef4444','#140a0c'],['Dorado','#eab308','#120f06'],['Morado','#a855f7','#0f0a1a']];
 let db=JSON.parse(localStorage.getItem(K)||'null')||{rivals:[],matches:[]};
 db.cfg=Object.assign({},DEF,db.cfg||{});
@@ -58,6 +59,7 @@ const sg=n=>(n>0?'+':'')+n;
 const cls=n=>n>0?'g':n<0?'r':'y';
 const sorted=a=>[...a].sort((x,y)=>y.date.localeCompare(x.date)||y.ts-x.ts);
 const fdate=d=>d.split('-').reverse().join('/');
+const ME=()=>(db.cfg.me||'').trim()||'Yo';
 
 function applyTheme(){
   const c=db.cfg,s=document.documentElement.style;
@@ -105,8 +107,8 @@ ${db.rivals.length?db.rivals.map(r=>{
 const TABS=[['all','Todos'],['new','Nuevos'],['old','Viejos']];
 function rowHTML(m,r){
   const c=m.my>m.opp?'g':m.my<m.opp?'r':'y';
-  return `<div class="m${m.old?' old':''}"><div><b class="${c}">Yo ${m.my} - ${m.opp} ${esc(r.name)}</b><br><small>${fdate(m.date)}</small></div>
-<div><button class="ic" onclick="matchForm('${m.id}')">✏️</button><button class="ic" onclick="delMatch('${m.id}')">🗑</button></div></div>`;
+  return `<div class="m${m.old?' old':''}"><div><b class="${c}">${esc(ME())} ${m.my} - ${m.opp} ${esc(r.name)}</b><br><small>${fdate(m.date)}</small></div>
+<div><button class="ic" onclick="swapMatch('${m.id}')">⇄</button><button class="ic" onclick="matchForm('${m.id}')">✏️</button><button class="ic" onclick="delMatch('${m.id}')">🗑</button></div></div>`;
 }
 function histHTML(ms,r){
   const n=ms.filter(m=>!m.old),o=ms.filter(m=>m.old);
@@ -143,13 +145,14 @@ function closeM(){const m=$('#m');m&&m.remove()}
 function themeForm(){
   modal(`<h2>Personalizar</h2>
 <label>Nombre de la app<input maxlength="20" value="${esc(db.cfg.name)}" oninput="setCfg('name',this.value)"></label>
+<label>Tu nombre (reemplaza “Yo”)<input maxlength="20" value="${esc(db.cfg.me)}" oninput="setCfg('me',this.value)"></label>
 <label>Color principal<input type="color" value="${db.cfg.acc}" oninput="setCfg('acc',this.value)"></label>
 <label>Color de fondo<input type="color" value="${db.cfg.bg}" oninput="setCfg('bg',this.value)"></label>
 <small>Temas rápidos</small>
 <div class="pr">${PRE.map((p,i)=>`<button class="btn alt" style="border-left:6px solid ${p[1]}" onclick="preset(${i})">${p[0]}</button>`).join('')}</div>
 <div class="row"><button class="btn alt" onclick="resetCfg()">Restablecer</button><button class="btn" onclick="closeM()">Listo</button></div>`);
 }
-function setCfg(k,v){db.cfg[k]=v;save();applyTheme();if(k==='name')render()}
+function setCfg(k,v){db.cfg[k]=v;save();applyTheme();if(k==='name'||k==='me')render()}
 function preset(i){db.cfg.acc=PRE[i][1];db.cfg.bg=PRE[i][2];save();applyTheme();themeForm()}
 function resetCfg(){db.cfg={...DEF};save();applyTheme();render();themeForm()}
 
@@ -174,13 +177,18 @@ function delRival(id){
 function matchForm(id){
   const m=db.matches.find(x=>x.id===id);
   const old=m?!!m.old:view.tab==='old';
+  const rv=db.rivals.find(x=>x.id===view.r);
   modal(`<h2>${m?'Editar':'Nuevo'} partido</h2>
-<div class="sc"><label>Yo<input id="f1" type="number" inputmode="numeric" min="0" max="99" value="${m?m.my:''}"></label><span>-</span>
-<label>Rival<input id="f2" type="number" inputmode="numeric" min="0" max="99" value="${m?m.opp:''}"></label></div>
+<div class="sc"><label>${esc(ME())}<input id="f1" type="number" inputmode="numeric" min="0" max="99" value="${m?m.my:''}"></label>
+<button class="btn alt" onclick="swapFields()">⇄</button>
+<label>${esc(rv?rv.name:'Rival')}<input id="f2" type="number" inputmode="numeric" min="0" max="99" value="${m?m.opp:''}"></label></div>
+<small style="display:block;margin:-4px 0 12px">Tocá ⇄ para intercambiar los goles si los pusiste al revés.</small>
 <label>Fecha<input id="f3" type="date" value="${m?m.date:today()}"></label>
 <label>Historial<select id="f4"><option value="0"${old?'':' selected'}>Nuevo</option><option value="1"${old?' selected':''}>Viejo</option></select></label>
 <div class="row"><button class="btn alt" onclick="closeM()">Cancelar</button><button class="btn" onclick="saveMatch('${id||''}')">Guardar</button></div>`);
 }
+function swapFields(){const a=$('#f1'),b=$('#f2'),t=a.value;a.value=b.value;b.value=t}
+function swapMatch(id){const m=db.matches.find(x=>x.id===id);if(!m)return;[m.my,m.opp]=[m.opp,m.my];save();render()}
 function saveMatch(id){
   const my=parseInt($('#f1').value),opp=parseInt($('#f2').value),date=$('#f3').value,old=$('#f4').value==='1';
   if(isNaN(my)||isNaN(opp)||my<0||opp<0||!date){alert('Completá goles y fecha');return}
@@ -201,7 +209,7 @@ function dl(name,type,txt){
 function exportData(){dl('duelos-fc-'+today()+'.json','application/json',JSON.stringify(db,null,2))}
 function exportTxt(){
   const sum=s=>`PJ ${s.pj} | Mis victorias ${s.w} | Empates ${s.d} | Mis derrotas ${s.l} | Victorias rival ${s.l} | GF ${s.gf} | GC ${s.gc} | Dif ${sg(s.dg)} | Balance ${sg(s.bal)} | ${s.pw}% V - ${s.pd}% E - ${s.pl}% D`;
-  const fmt=(a,r)=>a.length?sorted(a).map(m=>`${fdate(m.date)}  Yo ${m.my} - ${m.opp} ${r.name}`):['(sin partidos)'];
+  const fmt=(a,r)=>a.length?sorted(a).map(m=>`${fdate(m.date)}  ${ME()} ${m.my} - ${m.opp} ${r.name}`):['(sin partidos)'];
   const L=['HISTORIAL COMPLETO - '+db.cfg.name,'Exportado: '+fdate(today()),'','TOTAL GENERAL',sum(stats(db.matches)),''];
   db.rivals.forEach(r=>{
     const ms=db.matches.filter(m=>m.rid===r.id),n=ms.filter(m=>!m.old),o=ms.filter(m=>m.old);
