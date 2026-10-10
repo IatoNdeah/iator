@@ -252,119 +252,61 @@ applyTheme();render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script>
 
-<script type="module">
-/* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
-import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getDatabase,ref,set,remove,onValue} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-
-/* 👇 PEGÁ ACÁ TU CONFIG (Firebase → Configuración del proyecto → Tus apps → Web) */
-const firebaseConfig={
-  apiKey:"AIzaSyBZ2c9dnhEl6pjzrAIui-bKKsc_jwoIj9U",
-  authDomain:"iator-db2c9.firebaseapp.com",
-  databaseURL:"https://iator-db2c9-default-rtdb.firebaseio.com",
-  projectId:"iator-db2c9",
-  storageBucket:"iator-db2c9.firebasestorage.app",
-  messagingSenderId:"397322044767",
-  appId:"1:397322044767:web:470cb48e2789a1b97ea2ea"
-};
-
-const badge=document.getElementById('cloud');
-let online=false,fail=false;
-function paint(){
-  if(fail){badge.textContent='☁️ Error · revisá las reglas de Firebase';badge.style.color='#ef4444';return}
-  if(!navigator.onLine||!online){badge.textContent='☁️ Sin conexión · guardado en el dispositivo';badge.style.color='#eab308';return}
-  badge.textContent='☁️ Sincronizado';badge.style.color='#22c55e';
+<script>
+/* ===== AMPLIACIONES v1: Datos:, Verificador, Historial de modificaciones. Solo leen db; no modifican partidos. ===== */
+(function(){
+const KL='iator_log_v1',lg=()=>{try{return JSON.parse(localStorage.getItem(KL)||'[]')}catch(e){return[]}};
+const safe=f=>{try{return f()}catch(e){return{}}};
+const nm=id=>(rv(id)||{name:'?'}).name;
+const snap=()=>Object.fromEntries(db.matches.map(m=>[m.id,{k:JSON.stringify([m.rid,m.my,m.opp,m.date,!!m.old]),t:`${nm(m.rid)} ${m.my}-${m.opp} (${fdate(m.date||'')}, ${m.old?'EF26':'EF27'})`}]));
+function track(fn,a){
+  const b=safe(snap),res=fn.apply(null,a),c=safe(snap),t=new Date().toISOString(),L=[];
+  for(const id in c){if(!b[id])L.push({t,k:'Alta',n:c[id].t});else if(b[id].k!==c[id].k)L.push({t,k:'Edición',a:b[id].t,n:c[id].t})}
+  for(const id in b)if(!c[id])L.push({t,k:'Eliminación',a:b[id].t});
+  if(L.length)try{localStorage.setItem(KL,JSON.stringify([...lg(),...L].slice(-500)))}catch(e){}
+  return res;
 }
+['saveMatch','delMatch','swapMatch','delRival'].forEach(f=>{const o=window[f];window[f]=function(...a){return track(o,a)}});
 
-if(Object.values(firebaseConfig).some(v=>String(v).startsWith('PEGAR'))){
-  badge.textContent='☁️ Falta pegar el firebaseConfig';badge.style.color='#eab308';
-}else start();
+const out=m=>m.my>m.opp?'W':m.my<m.opp?'L':'D';
+const runs=(a,p)=>{let b=0,c=0;a.forEach(x=>{c=p(x)?c+1:0;b=Math.max(b,c)});return b};
+const since=(a,p)=>{for(let i=a.length-1;i>=0;i--)if(p(a[i]))return a.length-1-i;return null};
+const mx=(a,f)=>a.reduce((x,y)=>f(y)>f(x)?y:x,a[0]);
+const per=(a,n)=>{const g={};a.forEach(m=>{const k=m.date.slice(0,n);g[k]=(g[k]||0)+Math.sign(m.my-m.opp)});const e=Object.entries(g);
+  return[e.reduce((x,y)=>y[1]>x[1]?y:x,e[0]),e.reduce((x,y)=>y[1]<x[1]?y:x,e[0])]};
+const R0=Math.random();
+const row=(l,v)=>`<div class="m"><small>${l}</small><b style="text-align:right">${v}</b></div>`;
 
-function start(){
-  const app=initializeApp(firebaseConfig);
-  const rt=getDatabase(app);
-  const P={r:'iator/rivals',m:'iator/matches'};
-  const KN=K+'_known';
-  const ser=o=>JSON.stringify(Object.keys(o).sort().reduce((a,k)=>(a[k]=o[k],a),{}));
-  const sRival=r=>({id:r.id,name:r.name,ts:r.ts||0});
-  const sMatch=m=>({id:m.id,rid:m.rid,my:m.my,opp:m.opp,date:m.date,old:!!m.old,ts:m.ts||0});
-  const onErr=e=>{console.error('Firebase:',e);fail=true;paint()};
-
-  let remR=null,remM=null,ready=false;
-  const sent={r:{},m:{}};   // lo último que sabemos que está en la nube
-
-  function remember(){
-    localStorage.setItem(KN,JSON.stringify([...Object.keys(sent.r),...Object.keys(sent.m)]));
-  }
-  function push(k,list){
-    const ids=new Set();
-    list.forEach(o=>{
-      ids.add(o.id);
-      const s=ser(o);
-      if(sent[k][o.id]!==s){sent[k][o.id]=s;set(ref(rt,P[k]+'/'+o.id),o).catch(onErr)}
-    });
-    Object.keys(sent[k]).forEach(id=>{
-      if(!ids.has(id)){delete sent[k][id];remove(ref(rt,P[k]+'/'+id)).catch(onErr)}
-    });
-  }
-  function sync(){
-    if(!ready)return;
-    db.rivals.forEach((r,i)=>{if(!r.ts)r.ts=Date.now()+i});
-    localStorage.setItem(K,JSON.stringify(db));
-    push('r',db.rivals.map(sRival));
-    push('m',db.matches.map(sMatch));
-    remember();
-  }
-  window.cloudSync=sync;
-
-  // "Soy X" (flip) es una preferencia de cada dispositivo: no se sube
-  const withFlips=(list,flips)=>list
-    .map(r=>({...r,flip:!!flips[r.id]}))
-    .sort((a,b)=>(a.ts||0)-(b.ts||0)||a.name.localeCompare(b.name));
-  const mark=()=>{
-    sent.r={};sent.m={};
-    Object.keys(remR).forEach(id=>sent.r[id]=ser(remR[id]));
-    Object.keys(remM).forEach(id=>sent.m[id]=ser(remM[id]));
-  };
-
-  function apply(){
-    const flips=Object.fromEntries(db.rivals.map(r=>[r.id,r.flip]));
-    db.rivals=withFlips(Object.values(remR),flips);
-    db.matches=Object.values(remM);
-    mark();
-    localStorage.setItem(K,JSON.stringify(db));
-    remember();render();paint();
-  }
-
-  function initial(){
-    const known=JSON.parse(localStorage.getItem(KN)||'null');
-    const lr=db.rivals.filter(r=>!remR[r.id]),lm=db.matches.filter(m=>!remM[m.id]);
-    const remoteEmpty=!Object.keys(remR).length&&!Object.keys(remM).length;
-    let keepR=lr,keepM=lm;
-    if(known===null){
-      // primera vez en este dispositivo
-      if(!remoteEmpty&&(lr.length||lm.length)){
-        if(!confirm('Este dispositivo tiene '+lm.length+' partido(s) y '+lr.length+' rival(es) que no están en la nube.\n\n¿Subirlos? (Aceptar = subir y juntar, Cancelar = descartarlos y usar solo lo de la nube)')){keepR=[];keepM=[]}
-      }
-    }else{
-      // lo que ya estaba sincronizado y ya no está en la nube se borró desde otro dispositivo
-      const ks=new Set(known);
-      keepR=lr.filter(r=>!ks.has(r.id));keepM=lm.filter(m=>!ks.has(m.id));
-    }
-    const flips=Object.fromEntries(db.rivals.map(r=>[r.id,r.flip]));
-    db.rivals=withFlips([...Object.values(remR),...keepR],flips);
-    db.matches=[...Object.values(remM),...keepM];
-    mark();
-    ready=true;
-    sync();render();paint();
-  }
-
-  const step=()=>{if(remR&&remM){ready?apply():initial()}};
-  onValue(ref(rt,P.r),s=>{remR=s.val()||{};fail=false;step()},onErr);
-  onValue(ref(rt,P.m),s=>{remM=s.val()||{};fail=false;step()},onErr);
-  onValue(ref(rt,'.info/connected'),s=>{online=s.val()===true;paint()});
-  addEventListener('online',paint);addEventListener('offline',paint);
-  paint();
-}
-</script>
-</body></html>
+function datos(r){
+  const ms=db.matches.filter(m=>m.rid===r.id&&m.date).sort((x,y)=>x.date.localeCompare(y.date)||(x.ts||0)-(y.ts||0)).map(m=>PM(m,r));
+  if(!ms.length)return `<section class="card"><h2>Datos:</h2><p class="muted">Todavía no hay partidos para calcular datos.</p></section>`;
+  const A=esc(meN(r)),B=esc(opN(r)),n=ms.length,s=stats(ms),F=[];
+  const d=m=>`${A} ${m.my}-${m.opp} ${B} · ${fdate(m.date)}`;
+  const add=(g,l,v)=>F.push([g,l,v]);
+  const fm=v=>v===null?`nunca ganó (${n} PJ)`:v===0?'ganó el último':`${v} sin ganar`;
+  add(0,'Promedio de goles por partido',`${((s.gf+s.gc)/n).toFixed(2)} (${A} ${(s.gf/n).toFixed(2)} · ${B} ${(s.gc/n).toFixed(2)})`);
+  add(0,'Ventaja histórica',s.bal===0?'Igualados en victorias':`${s.bal>0?A:B} +${Math.abs(s.bal)} victorias`);
+  add(0,'Diferencia de goles',s.dg===0?'Igualados':`${s.dg>0?A:B} +${Math.abs(s.dg)}`);
+  [5,10].forEach(k=>{if(n>=1){const t=stats(ms.slice(-k));add(0,`Últimos ${Math.min(k,n)} (${A})`,`${t.w}G ${t.d}E ${t.l}P`)}});
+  add(0,'Últimos 10 (desde '+A+')',ms.slice(-10).map(m=>({W:'G',D:'E',L:'P'})[out(m)]).join(' '));
+  const L=ms[n-1];add(0,'Último encuentro',`${out(L)==='W'?A:out(L)==='L'?B:'Empate'} · ${d(L)}`);
+  let c=0;const lo=out(L);for(let i=n-1;i>=0&&out(ms[i])===lo;i--)c++;
+  add(1,'Racha actual',lo==='D'?`${c} empate(s) seguido(s)`:`${lo==='W'?A:B}: ${c} victoria(s) seguida(s)`);
+  add(1,'Mayor racha de victorias',`${A} ${runs(ms,m=>m.my>m.opp)} · ${B} ${runs(ms,m=>m.my<m.opp)}`);
+  add(1,'Mayor racha sin perder',`${A} ${runs(ms,m=>m.my>=m.opp)} · ${B} ${runs(ms,m=>m.my<=m.opp)}`);
+  add(1,'Mayor racha sin ganar (sequía histórica)',`${A} ${runs(ms,m=>m.my<=m.opp)} · ${B} ${runs(ms,m=>m.my>=m.opp)}`);
+  add(1,'Sequía actual',`${A}: ${fm(since(ms,m=>m.my>m.opp))} · ${B}: ${fm(since(ms,m=>m.my<m.opp))}`);
+  const ga=mx(ms,m=>m.my-m.opp),gb=mx(ms,m=>m.opp-m.my);
+  add(2,'Mayor goleada de '+A,ga.my>ga.opp?d(ga):'—');
+  add(2,'Mayor goleada de '+B,gb.opp>gb.my?d(gb):'—');
+  add(2,'Partido con más goles',`${d(mx(ms,m=>m.my+m.opp))} (${mx(ms,m=>m.my+m.opp).my+mx(ms,m=>m.my+m.opp).opp})`);
+  const gp=mx(ms,m=>Math.max(m.my,m.opp));add(2,'Más goles de un jugador en un partido',`${gp.my>=gp.opp?A:B} ${Math.max(gp.my,gp.opp)} · ${fdate(gp.date)}`);
+  const cs={};ms.forEach(m=>{const k=m.my+'-'+m.opp;cs[k]=(cs[k]||0)+1});const top=Object.entries(cs).sort((x,y)=>y[1]-x[1])[0];
+  add(2,'Marcador más repetido',top[1]>1?`${top[0]} (${top[1]} veces)`:'Ninguno se repite');
+  [['mes',7],['año',4]].forEach(([nom,len])=>{const[hi,lw]=per(ms,len);
+    add(2,`Mejor ${nom} de ${A}`,hi[1]>0?`${hi[0]} (+${hi[1]})`:'—');add(2,`Mejor ${nom} de ${B}`,lw[1]<0?`${lw[0]} (+${-lw[1]})`:'—')});
+  const G=['Cara a cara','Rachas y sequías','Récords'];
+  const pick=F[Math.floor(R0*F.length)];
+  return `<section class="card"><h2>Datos:</h2>
+<div class="st" style="text-align:left;margin-bottom:8px"><small>Estadística del día</small><b style="font-size:15px">${pick[1]}: ${pick[2]}</b></div>
+${G.map((t,i)=>`<h3 class="sec">${t}</h3>`+F.filter(f=>f[0]===i).map(f
