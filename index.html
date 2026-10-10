@@ -252,6 +252,19 @@ applyTheme();render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script>
 
+<style>
+/* Apartados plegables (solo estilos nuevos) */
+.fold{margin-bottom:12px}
+.fh{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.fh:active{background:var(--line)}
+.fh b{font-size:16px}.fh small{font-size:13px}
+.fh .ar{color:var(--acc);font-size:20px;flex:none}
+.fb{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.fold.open .fb{grid-template-rows:1fr}
+.fi{min-height:0;overflow:hidden;visibility:hidden;transition:visibility .3s}
+.fold.open .fi{visibility:visible}
+.fi>:first-child{margin-top:8px}
+</style>
 <script>
 /* ===== AMPLIACIONES v1: Datos:, Verificador, Historial de modificaciones. Solo leen db; no modifican partidos. ===== */
 (function(){
@@ -325,7 +338,7 @@ function verify(){
     const k=[m.rid,m.my,m.opp,m.date].join('|');(seen[k]=seen[k]||{n:0,lab}).n++;
   });
   Object.values(seen).forEach(o=>{if(o.n>1)W.push([o.lab,`Posible duplicado: ${o.n} partidos con mismo rival, marcador y fecha (puede ser legítimo).`])});
-  return `<section class="card"><h2>Verificador de datos</h2><small style="display:block;margin-bottom:6px">Solo avisa: no edita, corrige ni borra nada.</small>
+  return `<section class="card" id="ver"><h2>Verificador de datos</h2><small style="display:block;margin-bottom:6px">Solo avisa: no edita, corrige ni borra nada.</small>
 ${W.length?W.map(w=>`<div class="m" style="display:block"><b>${w[0]}</b><br><small>${w[1]}</small></div>`).join(''):'<p class="muted">Sin avisos. No se detectó nada raro.</p>'}</section>`;
 }
 
@@ -335,8 +348,32 @@ function logHTML(){
 ${l.length?l.map(e=>`<div class="m" style="display:block"><small>${f(e.t)} · ${e.k}</small><br><b style="font-size:14px">${e.a?esc(e.a):''}${e.a&&e.n?' → ':''}${e.n?esc(e.n):''}</b></div>`).join(''):'<p class="muted">Todavía no hay cambios registrados. Se registran desde ahora (altas, ediciones y eliminaciones hechas en este dispositivo).</p>'}</section>`;
 }
 
+const UI='iator_ui_v1';let op={};try{op=JSON.parse(localStorage.getItem(UI))||{}}catch(e){}
+function fold(key,title,nodes,hide){
+  if(!nodes[0]||!nodes[nodes.length-1])return;
+  const f=document.createElement('div'),h=document.createElement('div'),b=document.createElement('div'),i=document.createElement('div');
+  f.className='fold';h.className='fh';b.className='fb';i.className='fi';h.setAttribute('role','button');h.tabIndex=0;
+  const paint=()=>{const o=!!op[key];f.classList.toggle('open',o);h.setAttribute('aria-expanded',o);
+    h.innerHTML=`<div><b>${title}</b><br><small>${o?'Presionar para ocultar':'Presionar para ver'}</small></div><span class="ar">${o?'⬆':'⬇'}</span>`};
+  const tg=()=>{op[key]=!op[key];try{localStorage.setItem(UI,JSON.stringify(op))}catch(e){}paint()};
+  h.addEventListener('click',tg);
+  h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg()}});
+  paint();
+  nodes[0].parentNode.insertBefore(f,nodes[0]);
+  nodes.forEach(n=>i.appendChild(n));
+  if(hide)hide.style.display='none';
+  b.appendChild(i);f.append(h,b);
+}
+function folds(){
+  const app=$('#app');
+  const bt=app.querySelector('button[onclick="matchForm()"]'),row=bt&&bt.closest('.row');
+  if(row&&row.nextElementSibling){row.style.justifyContent='flex-end';fold('hist','Historial de partidos',[row,row.nextElementSibling],row.querySelector('h2'))}
+  const v=app.querySelector('#ver');
+  if(v)fold('ver','Verificador de datos',[v],v.querySelector('h2'));
+}
 const R=window.render;
-window.render=function(){R();try{const r=view.r&&rv(view.r);$('#app').insertAdjacentHTML('beforeend',(r?datos(r):verify())+logHTML())}catch(e){console.error('Ampliaciones:',e)}};
+window.render=function(){R();try{const r=view.r&&rv(view.r);$('#app').insertAdjacentHTML('beforeend',(r?datos(r):verify())+logHTML())}catch(e){console.error('Ampliaciones:',e)}
+  try{folds()}catch(e){console.error('Plegables:',e)}};
 window.render();
 })();
 </script>
