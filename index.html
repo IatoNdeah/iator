@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#0b0f17">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
-<title>Duelos FC</title>
+<title>Iator</title>
 <style>
 :root{--acc:#22c55e;--bg:#0b0f17;--on:#04210f;
 --card:color-mix(in srgb,var(--bg) 90%,#fff 10%);
@@ -45,10 +45,11 @@ input[type=color]{height:48px;padding:4px}
 <div id="app"></div>
 <script>
 const K='duelosfc_v1';
-const DEF={acc:'#22c55e',bg:'#0b0f17',name:'Duelos FC',me:'Yo'};
+const DEF={acc:'#22c55e',bg:'#0b0f17',name:'Iator',me:'Yo'};
 const PRE=[['Verde','#22c55e','#0b0f17'],['Azul','#3b82f6','#0a1020'],['Rojo','#ef4444','#140a0c'],['Dorado','#eab308','#120f06'],['Morado','#a855f7','#0f0a1a']];
 let db=JSON.parse(localStorage.getItem(K)||'null')||{rivals:[],matches:[]};
 db.cfg=Object.assign({},DEF,db.cfg||{});
+if(db.cfg.name==='Duelos FC')db.cfg.name='Iator';
 let view={r:null,tab:'all'};
 const $=s=>document.querySelector(s);
 const save=()=>localStorage.setItem(K,JSON.stringify(db));
@@ -206,7 +207,7 @@ function dl(name,type,txt){
   a.href=URL.createObjectURL(new Blob([txt],{type}));
   a.download=name;a.click();
 }
-function exportData(){dl('duelos-fc-'+today()+'.json','application/json',JSON.stringify(db,null,2))}
+function exportData(){dl('iator-respaldo-'+today()+'.json','application/json',JSON.stringify(db,null,2))}
 function exportTxt(){
   const sum=s=>`PJ ${s.pj} | Mis victorias ${s.w} | Empates ${s.d} | Mis derrotas ${s.l} | Victorias rival ${s.l} | GF ${s.gf} | GC ${s.gc} | Dif ${sg(s.dg)} | Balance ${sg(s.bal)} | ${s.pw}% V - ${s.pd}% E - ${s.pl}% D`;
   const fmt=(a,r)=>a.length?sorted(a).map(m=>`${fdate(m.date)}  ${ME()} ${m.my} - ${m.opp} ${r.name}`):['(sin partidos)'];
@@ -217,7 +218,7 @@ function exportTxt(){
       '-- Historial nuevo ('+n.length+') --',...fmt(n,r),'',
       '-- Historial viejo ('+o.length+') --',...fmt(o,r),'','');
   });
-  dl('historial-'+today()+'.txt','text/plain;charset=utf-8',L.join('\n'));
+  dl('iator-historial-'+today()+'.txt','text/plain;charset=utf-8',L.join('\n'));
 }
 function importData(inp){
   const f=inp.files[0]; if(!f)return;
