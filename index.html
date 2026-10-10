@@ -378,6 +378,65 @@ window.render();
 })();
 </script>
 
+<script>
+/* ===== ORDEN Y NOMBRES DE HISTORIALES: solo cambia el orden visual y las etiquetas; no toca partidos ni el campo old ===== */
+(function(){
+const HD={new:'EF27',old:'EF26'};
+function hc(){
+  const h=db.hcfg=db.hcfg&&typeof db.hcfg==='object'?db.hcfg:{};
+  if(!(Array.isArray(h.order)&&h.order.length===2&&h.order.includes('new')&&h.order.includes('old')))h.order=['new','old'];
+  if(!h.names||typeof h.names!=='object')h.names={};
+  return h;
+}
+const nm=k=>String(hc().names[k]||'').trim()||HD[k];
+function applyHist(){TABS.length=0;TABS.push(['all','Todos'],...hc().order.map(k=>[k,nm(k)]))}
+
+const H0=window.histHTML;
+window.histHTML=function(ms,r){
+  const s=H0(ms,r);
+  try{
+    const parts=s.split('<h3 class="sec'),head=parts.shift(),blk={},re=/^ (?:old)?">Historial (EF27|EF26) \(/;
+    parts.forEach(p=>{const m=p.match(re);if(m)blk[m[1]==='EF27'?'new':'old']=p});
+    if(!Object.keys(blk).length||Object.keys(blk).length!==parts.length)return s;
+    return head+hc().order.filter(k=>blk[k]).map(k=>'<h3 class="sec'+blk[k].replace(re,()=>(blk[k].startsWith(' old')?' old':' ')+'">Historial '+esc(nm(k))+' (')).join('');
+  }catch(e){return s}
+};
+const M0=window.matchForm;
+window.matchForm=function(id){
+  M0(id);
+  try{const s=$('#f4'),a=s.querySelector('option[value="0"]'),b=s.querySelector('option[value="1"]');
+    a.textContent=nm('new');b.textContent=nm('old');if(hc().order[0]==='old')s.insertBefore(b,a)}catch(e){}
+};
+
+window.histEditor=function(){
+  const o=hc().order;
+  modal(`<h2>Ordenar y renombrar historiales</h2>
+<small style="display:block;margin-bottom:8px">Usá ◀ ▶ para cambiar la posición. Solo cambia el orden visual y el nombre: los partidos no se tocan.</small>
+${o.map((k,i)=>`<div class="sc"><button class="btn alt" ${i?'':'disabled style="opacity:.4"'} onclick="histMove('${k}',-1)">◀</button>
+<label><input maxlength="20" style="font-size:18px" value="${esc(nm(k))}" oninput="histName('${k}',this.value)"></label>
+<button class="btn alt" ${i<o.length-1?'':'disabled style="opacity:.4"'} onclick="histMove('${k}',1)">▶</button></div>`).join('')}
+<div class="row" style="margin-top:12px"><button class="btn" onclick="closeM()">Listo</button></div>`);
+  document.activeElement&&document.activeElement.blur&&document.activeElement.blur();
+};
+window.histName=function(k,v){hc().names[k]=v;save();applyHist();render()};
+window.histMove=function(k,d){
+  const o=hc().order,i=o.indexOf(k),j=i+d;
+  if(i<0||j<0||j>=o.length)return;
+  [o[i],o[j]]=[o[j],o[i]];save();applyHist();render();histEditor();
+};
+
+const R1=window.render;
+window.render=function(){
+  try{applyHist()}catch(e){console.error('Historiales:',e)}
+  R1();
+  try{if(view.r){const t=$('#app').querySelectorAll('.tabs')[1];
+    if(t)t.insertAdjacentHTML('afterend','<div class="row" style="justify-content:flex-end;margin-top:-4px"><button class="btn alt" style="padding:6px 10px;font-size:13px" onclick="histEditor()">↔ Ordenar y renombrar historiales</button></div>')}}
+  catch(e){console.error('Historiales:',e)}
+};
+window.render();
+})();
+</script>
+
 <script type="module">
 /* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
