@@ -7,34 +7,48 @@
 <link rel="icon" href="icon.svg">
 <title>Duelos FC</title>
 <style>
+:root{--acc:#22c55e;--bg:#0b0f17;--on:#04210f;
+--card:color-mix(in srgb,var(--bg) 90%,#fff 10%);
+--line:color-mix(in srgb,var(--bg) 80%,#fff 20%)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;background:#0b0f17;color:#e8ecf3;font:16px system-ui,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px 40px}
+body{margin:0;background:var(--bg);color:#e8ecf3;font:16px system-ui,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px 40px}
 #app{max-width:560px;margin:auto}
 h1{font-size:22px;margin:4px 0 16px}h2{font-size:16px;margin:0 0 12px}
-.card{background:#151b28;border:1px solid #232c3f;border-radius:16px;padding:14px;margin-bottom:12px}
-.tap:active{background:#1b2336}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.tap:active{background:var(--line)}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.st{background:#0f1521;border-radius:12px;padding:10px;text-align:center}
+.st{background:var(--bg);border-radius:12px;padding:10px;text-align:center}
 .st b{display:block;font-size:20px}.st small{font-size:11px}
-.btn{background:#22c55e;color:#04210f;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:15px}
-.btn.alt{background:#232c3f;color:#e8ecf3}.btn.red{background:#3a1519;color:#ff8a8a}
-.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:#232c3f;margin:10px 0 4px}
+.btn{background:var(--acc);color:var(--on);border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:15px}
+.btn.alt{background:var(--line);color:#e8ecf3}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin:10px 0 4px}
 .bar i{display:block;height:100%}
 .g{color:#22c55e}.y{color:#eab308}.r{color:#ef4444}
 .muted,small{color:#8b95a9}
-input{width:100%;background:#0f1521;border:1px solid #232c3f;color:#fff;border-radius:12px;padding:12px;font-size:18px;margin:6px 0 12px}
+input,select{width:100%;background:var(--bg);border:1px solid var(--line);color:#fff;border-radius:12px;padding:12px;font-size:18px;margin:6px 0 12px}
+input[type=color]{height:48px;padding:4px}
 #m{position:fixed;inset:0;background:#000a;display:flex;align-items:flex-end;justify-content:center;z-index:9}
-#m>div{background:#151b28;width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:18px 18px 28px}
+#m>div{background:var(--card);width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:18px 18px 28px;max-height:90vh;overflow:auto}
 .sc{display:flex;align-items:center;gap:10px}.sc label{flex:1}.sc input{text-align:center;font-size:28px}
-.m{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid #232c3f}
+.m{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.m.old{opacity:.65}
 .ic{background:none;border:0;font-size:18px;padding:6px}
+.pr{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 16px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs button{flex:1;background:var(--line);color:#e8ecf3;border:0;border-radius:10px;padding:10px 4px;font-weight:600;font-size:14px}
+.tabs .on{background:var(--acc);color:var(--on)}
+.sec{font-size:14px;margin:16px 0 4px;color:var(--acc);text-transform:uppercase;letter-spacing:.5px}
+.sec.old{color:#8b95a9}
 </style></head><body>
 <div id="app"></div>
 <script>
 const K='duelosfc_v1';
+const DEF={acc:'#22c55e',bg:'#0b0f17',name:'Duelos FC'};
+const PRE=[['Verde','#22c55e','#0b0f17'],['Azul','#3b82f6','#0a1020'],['Rojo','#ef4444','#140a0c'],['Dorado','#eab308','#120f06'],['Morado','#a855f7','#0f0a1a']];
 let db=JSON.parse(localStorage.getItem(K)||'null')||{rivals:[],matches:[]};
-let view={r:null};
+db.cfg=Object.assign({},DEF,db.cfg||{});
+let view={r:null,tab:'all'};
 const $=s=>document.querySelector(s);
 const save=()=>localStorage.setItem(K,JSON.stringify(db));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -44,6 +58,14 @@ const sg=n=>(n>0?'+':'')+n;
 const cls=n=>n>0?'g':n<0?'r':'y';
 const sorted=a=>[...a].sort((x,y)=>y.date.localeCompare(x.date)||y.ts-x.ts);
 const fdate=d=>d.split('-').reverse().join('/');
+
+function applyTheme(){
+  const c=db.cfg,s=document.documentElement.style;
+  const n=parseInt(c.acc.slice(1),16),l=.299*(n>>16)+.587*(n>>8&255)+.114*(n&255);
+  s.setProperty('--acc',c.acc);s.setProperty('--bg',c.bg);s.setProperty('--on',l>150?'#000':'#fff');
+  $('meta[name=theme-color]').content=c.bg;
+  document.title=c.name||DEF.name;
+}
 
 function stats(ms){
   const s={pj:ms.length,w:0,d:0,l:0,gf:0,gc:0};
@@ -64,7 +86,8 @@ ${st(s.gf,'Goles a favor')}${st(s.gc,'Goles en contra')}${st(sg(s.dg),'Dif. de g
 
 function homeView(){
   const s=stats(db.matches);
-  return `<h1>⚽ Duelos FC</h1>
+  return `<div class="row" style="margin-bottom:0"><h1 style="margin-bottom:0">⚽ ${esc(db.cfg.name)}</h1><button class="ic" onclick="themeForm()">🎨</button></div>
+<small style="display:block;margin:2px 0 16px">Creado por Iato</small>
 <section class="card"><h2>Total general</h2>${statsHTML(s)}</section>
 <div class="row"><h2>Rivales</h2><button class="btn" onclick="rivalForm()">+ Rival</button></div>
 ${db.rivals.length?db.rivals.map(r=>{
@@ -72,35 +95,63 @@ ${db.rivals.length?db.rivals.map(r=>{
   return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(r.name)}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
 <small>${t.pj} PJ · ${t.w}G ${t.d}E ${t.l}P · GF ${t.gf} GC ${t.gc}</small></div>`}).join('')
 :'<p class="muted">Todavía no hay rivales. Tocá “+ Rival”.</p>'}
-<section class="card"><h2>Respaldo</h2>
-<div class="row"><button class="btn" onclick="exportData()">Exportar</button>
+<section class="card"><h2>Respaldo y exportación</h2>
+<div class="row"><button class="btn" onclick="exportData()">Respaldo (.json)</button>
 <button class="btn alt" onclick="$('#imp').click()">Importar</button></div>
+<div class="row"><button class="btn alt" style="width:100%" onclick="exportTxt()">Exportar historial completo (.txt)</button></div>
 <input id="imp" type="file" accept=".json" hidden onchange="importData(this)"></section>`;
 }
 
+const TABS=[['all','Todos'],['new','Nuevos'],['old','Viejos']];
+function rowHTML(m,r){
+  const c=m.my>m.opp?'g':m.my<m.opp?'r':'y';
+  return `<div class="m${m.old?' old':''}"><div><b class="${c}">Yo ${m.my} - ${m.opp} ${esc(r.name)}</b><br><small>${fdate(m.date)}</small></div>
+<div><button class="ic" onclick="matchForm('${m.id}')">✏️</button><button class="ic" onclick="delMatch('${m.id}')">🗑</button></div></div>`;
+}
+function histHTML(ms,r){
+  const n=ms.filter(m=>!m.old),o=ms.filter(m=>m.old);
+  const blk=(t,a,c)=>`<h3 class="sec ${c}">${t} (${a.length})</h3>`+(a.length?a.map(m=>rowHTML(m,r)).join(''):'<p class="muted">Sin partidos.</p>');
+  let h='';
+  if(view.tab!=='old')h+=blk('Historial nuevo',n,'');
+  if(view.tab!=='new')h+=blk('Historial viejo',o,'old');
+  return h;
+}
 function rivalView(r){
-  const ms=sorted(db.matches.filter(m=>m.rid===r.id));
+  const all=sorted(db.matches.filter(m=>m.rid===r.id));
+  const ms=view.tab==='new'?all.filter(m=>!m.old):view.tab==='old'?all.filter(m=>m.old):all;
+  const cnt=t=>t==='new'?all.filter(m=>!m.old).length:t==='old'?all.filter(m=>m.old).length:all.length;
   return `<div class="row"><button class="btn alt" onclick="openRival(null)">←</button>
 <div><button class="ic" onclick="rivalForm('${r.id}')">✏️</button><button class="ic" onclick="delRival('${r.id}')">🗑</button></div></div>
 <h1>${esc(r.name)}</h1>
-<section class="card">${statsHTML(stats(ms))}</section>
+<div class="tabs">${TABS.map(t=>`<button class="${view.tab===t[0]?'on':''}" onclick="setTab('${t[0]}')">${t[1]} (${cnt(t[0])})</button>`).join('')}</div>
+<section class="card"><h2>Estadísticas · ${TABS.find(t=>t[0]===view.tab)[1]}</h2>${statsHTML(stats(ms))}</section>
 <div class="row"><h2>Historial</h2><button class="btn" onclick="matchForm()">+ Partido</button></div>
-<section class="card">${ms.length?ms.map(m=>{
-  const c=m.my>m.opp?'g':m.my<m.opp?'r':'y';
-  return `<div class="m"><div><b class="${c}">Yo ${m.my} - ${m.opp} ${esc(r.name)}</b><br><small>${fdate(m.date)}</small></div>
-<div><button class="ic" onclick="matchForm('${m.id}')">✏️</button><button class="ic" onclick="delMatch('${m.id}')">🗑</button></div></div>`}).join('')
-:'<p class="muted">Sin partidos todavía.</p>'}</section>`;
+<section class="card" style="padding-top:0">${histHTML(ms,r)}</section>`;
 }
+function setTab(t){view.tab=t;render()}
 
 function render(){
   const r=view.r&&db.rivals.find(x=>x.id===view.r);
   if(view.r&&!r){view.r=null}
   $('#app').innerHTML=r?rivalView(r):homeView();
 }
-function openRival(id){view.r=id;render();scrollTo(0,0)}
+function openRival(id){view.r=id;view.tab='all';render();scrollTo(0,0)}
 
 function modal(h){closeM();const d=document.createElement('div');d.id='m';d.innerHTML=`<div>${h}</div>`;document.body.appendChild(d);const i=d.querySelector('input');i&&i.focus()}
 function closeM(){const m=$('#m');m&&m.remove()}
+
+function themeForm(){
+  modal(`<h2>Personalizar</h2>
+<label>Nombre de la app<input maxlength="20" value="${esc(db.cfg.name)}" oninput="setCfg('name',this.value)"></label>
+<label>Color principal<input type="color" value="${db.cfg.acc}" oninput="setCfg('acc',this.value)"></label>
+<label>Color de fondo<input type="color" value="${db.cfg.bg}" oninput="setCfg('bg',this.value)"></label>
+<small>Temas rápidos</small>
+<div class="pr">${PRE.map((p,i)=>`<button class="btn alt" style="border-left:6px solid ${p[1]}" onclick="preset(${i})">${p[0]}</button>`).join('')}</div>
+<div class="row"><button class="btn alt" onclick="resetCfg()">Restablecer</button><button class="btn" onclick="closeM()">Listo</button></div>`);
+}
+function setCfg(k,v){db.cfg[k]=v;save();applyTheme();if(k==='name')render()}
+function preset(i){db.cfg.acc=PRE[i][1];db.cfg.bg=PRE[i][2];save();applyTheme();themeForm()}
+function resetCfg(){db.cfg={...DEF};save();applyTheme();render();themeForm()}
 
 function rivalForm(id){
   const r=db.rivals.find(x=>x.id===id);
@@ -122,17 +173,19 @@ function delRival(id){
 
 function matchForm(id){
   const m=db.matches.find(x=>x.id===id);
+  const old=m?!!m.old:view.tab==='old';
   modal(`<h2>${m?'Editar':'Nuevo'} partido</h2>
 <div class="sc"><label>Yo<input id="f1" type="number" inputmode="numeric" min="0" max="99" value="${m?m.my:''}"></label><span>-</span>
 <label>Rival<input id="f2" type="number" inputmode="numeric" min="0" max="99" value="${m?m.opp:''}"></label></div>
 <label>Fecha<input id="f3" type="date" value="${m?m.date:today()}"></label>
+<label>Historial<select id="f4"><option value="0"${old?'':' selected'}>Nuevo</option><option value="1"${old?' selected':''}>Viejo</option></select></label>
 <div class="row"><button class="btn alt" onclick="closeM()">Cancelar</button><button class="btn" onclick="saveMatch('${id||''}')">Guardar</button></div>`);
 }
 function saveMatch(id){
-  const my=parseInt($('#f1').value),opp=parseInt($('#f2').value),date=$('#f3').value;
+  const my=parseInt($('#f1').value),opp=parseInt($('#f2').value),date=$('#f3').value,old=$('#f4').value==='1';
   if(isNaN(my)||isNaN(opp)||my<0||opp<0||!date){alert('Completá goles y fecha');return}
-  if(id){Object.assign(db.matches.find(x=>x.id===id),{my,opp,date})}
-  else db.matches.push({id:uid(),rid:view.r,my,opp,date,ts:Date.now()});
+  if(id){Object.assign(db.matches.find(x=>x.id===id),{my,opp,date,old})}
+  else db.matches.push({id:uid(),rid:view.r,my,opp,date,old,ts:Date.now()});
   save();closeM();render();
 }
 function delMatch(id){
@@ -140,10 +193,23 @@ function delMatch(id){
   db.matches=db.matches.filter(x=>x.id!==id);save();render();
 }
 
-function exportData(){
-  const b=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(b);
-  a.download='duelos-fc-'+today()+'.json';a.click();
+function dl(name,type,txt){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([txt],{type}));
+  a.download=name;a.click();
+}
+function exportData(){dl('duelos-fc-'+today()+'.json','application/json',JSON.stringify(db,null,2))}
+function exportTxt(){
+  const sum=s=>`PJ ${s.pj} | Mis victorias ${s.w} | Empates ${s.d} | Mis derrotas ${s.l} | Victorias rival ${s.l} | GF ${s.gf} | GC ${s.gc} | Dif ${sg(s.dg)} | Balance ${sg(s.bal)} | ${s.pw}% V - ${s.pd}% E - ${s.pl}% D`;
+  const fmt=(a,r)=>a.length?sorted(a).map(m=>`${fdate(m.date)}  Yo ${m.my} - ${m.opp} ${r.name}`):['(sin partidos)'];
+  const L=['HISTORIAL COMPLETO - '+db.cfg.name,'Exportado: '+fdate(today()),'','TOTAL GENERAL',sum(stats(db.matches)),''];
+  db.rivals.forEach(r=>{
+    const ms=db.matches.filter(m=>m.rid===r.id),n=ms.filter(m=>!m.old),o=ms.filter(m=>m.old);
+    L.push('=== '+r.name.toUpperCase()+' ===',sum(stats(ms)),'',
+      '-- Historial nuevo ('+n.length+') --',...fmt(n,r),'',
+      '-- Historial viejo ('+o.length+') --',...fmt(o,r),'','');
+  });
+  dl('historial-'+today()+'.txt','text/plain;charset=utf-8',L.join('\n'));
 }
 function importData(inp){
   const f=inp.files[0]; if(!f)return;
@@ -153,13 +219,13 @@ function importData(inp){
       const d=JSON.parse(rd.result);
       if(!Array.isArray(d.rivals)||!Array.isArray(d.matches))throw 0;
       if(!confirm('Esto reemplaza todos los datos actuales. ¿Continuar?'))return;
-      db=d;save();view.r=null;render();
+      db=d;db.cfg=Object.assign({},DEF,db.cfg||{});save();view={r:null,tab:'all'};applyTheme();render();
     }catch(e){alert('Archivo no válido')}
     inp.value='';
   };
   rd.readAsText(f);
 }
 
-render();
+applyTheme();render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script></body></html>
