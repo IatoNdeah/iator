@@ -64,6 +64,7 @@ const sorted=a=>[...a].sort((x,y)=>y.date.localeCompare(x.date)||y.ts-x.ts);
 const fdate=d=>d.split('-').reverse().join('/');
 const ME=()=>(db.cfg.me||'').trim()||'Yo';
 const rv=id=>db.rivals.find(x=>x.id===id);
+const rt=r=>r.title||r.name;
 const PM=(m,r)=>r&&r.flip?{...m,my:m.opp,opp:m.my}:m;
 const pmAll=ms=>ms.map(m=>PM(m,rv(m.rid)));
 const meN=r=>r&&r.flip?r.name:ME();
@@ -102,7 +103,7 @@ function homeView(){
 <div class="row"><h2>Rivales</h2><button class="btn" onclick="rivalForm()">+ Rival</button></div>
 ${db.rivals.length?db.rivals.map(r=>{
   const t=stats(pmAll(db.matches.filter(m=>m.rid===r.id)));
-  return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(r.name)}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
+  return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(rt(r))}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
 <small>${t.pj} PJ · ${t.w}G ${t.d}E ${t.l}P · GF ${t.gf} GC ${t.gc}</small></div>`}).join('')
 :'<p class="muted">Todavía no hay rivales. Tocá “+ Rival”.</p>'}
 <section class="card"><h2>Respaldo y exportación</h2>
@@ -133,7 +134,7 @@ function rivalView(r){
   const cnt=t=>t==='new'?all.filter(m=>!m.old).length:t==='old'?all.filter(m=>m.old).length:all.length;
   return `<div class="row"><button class="btn alt" onclick="openRival(null)">←</button>
 <div><button class="ic" onclick="rivalForm('${r.id}')">✏️</button><button class="ic" onclick="delRival('${r.id}')">🗑</button></div></div>
-<h1>${esc(r.name)}</h1>
+<h1>${esc(rt(r))}</h1>
 <small style="display:block;margin:-8px 0 6px">Ver resultados como:</small>
 <div class="tabs"><button class="${r.flip?'':'on'}" onclick="setFlip('${r.id}',false)">Soy ${esc(ME())}</button><button class="${r.flip?'on':''}" onclick="setFlip('${r.id}',true)">Soy ${esc(r.name)}</button></div>
 <div class="tabs">${TABS.map(t=>`<button class="${view.tab===t[0]?'on':''}" onclick="setTab('${t[0]}')">${t[1]} (${cnt(t[0])})</button>`).join('')}</div>
@@ -190,12 +191,19 @@ function resetCfg(){db.cfg={...DEF};save();applyTheme();render();themeForm()}
 function rivalForm(id){
   const r=rv(id);
   modal(`<h2>${r?'Editar':'Nuevo'} rival</h2>
-<input id="f1" placeholder="Nombre del rival" maxlength="30" value="${r?esc(r.name):''}">
+${r?`<label>Nombre del rival (título)<input id="f1" placeholder="Nombre del rival" maxlength="30" value="${esc(rt(r))}" data-o="${esc(rt(r))}"></label>
+<label>Nombre en los resultados (“Soy …”)<input id="f2" maxlength="30" value="${esc(r.name)}"></label>
+<small style="display:block;margin:-4px 0 12px">Cambiar el título no modifica el nombre de los resultados ni el botón “Soy …”.</small>`
+:`<input id="f1" placeholder="Nombre del rival" maxlength="30" value="">`}
 <div class="row"><button class="btn alt" onclick="closeM()">Cancelar</button><button class="btn" onclick="saveRival('${id||''}')">Guardar</button></div>`);
 }
 function saveRival(id){
   const n=$('#f1').value.trim(); if(!n)return;
-  if(id)rv(id).name=n; else db.rivals.push({id:uid(),name:n});
+  if(id){
+    const r=rv(id),f2=$('#f2'),pn=f2?f2.value.trim():'';
+    if(pn)r.name=pn;
+    if(n!==$('#f1').dataset.o){if(n!==r.name)r.title=n;else delete r.title}
+  }else db.rivals.push({id:uid(),name:n});
   save();closeM();render();
 }
 function delRival(id){
@@ -246,7 +254,7 @@ function exportTxt(){
   const L=['HISTORIAL COMPLETO - '+db.cfg.name,'Exportado: '+fdate(today()),'','TOTAL GENERAL',sum(stats(pmAll(db.matches))),''];
   db.rivals.forEach(r=>{
     const ms=db.matches.filter(m=>m.rid===r.id),n=ms.filter(m=>!m.old),o=ms.filter(m=>m.old);
-    L.push('=== '+r.name.toUpperCase()+' ===','Resultados vistos como: '+meN(r),sum(stats(ms.map(m=>PM(m,r)))),'',
+    L.push('=== '+rt(r).toUpperCase()+' ===','Resultados vistos como: '+meN(r),sum(stats(ms.map(m=>PM(m,r)))),'',
       '-- Historial EF27 ('+n.length+') --',...fmt(n,r),'',
       '-- Historial EF26 ('+o.length+') --',...fmt(o,r),'','');
   });
@@ -332,7 +340,7 @@ function start(){
   const P={r:'iator/rivals',m:'iator/matches'};
   const KN=K+'_known';
   const ser=o=>JSON.stringify(Object.keys(o).sort().reduce((a,k)=>(a[k]=o[k],a),{}));
-  const sRival=r=>({id:r.id,name:r.name,ts:r.ts||0});
+  const sRival=r=>{const o={id:r.id,name:r.name,ts:r.ts||0};if(r.title)o.title=r.title;return o};
   const sMatch=m=>({id:m.id,rid:m.rid,my:m.my,opp:m.opp,date:m.date,old:!!m.old,ts:m.ts||0});
   const onErr=e=>{console.error('Firebase:',e);fail=true;paint()};
 
