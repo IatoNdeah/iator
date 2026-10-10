@@ -650,7 +650,7 @@ window.render();
 </script>
 
 <style>
-/* ===== OCR DE CAPTURA v2 (solo estilos nuevos) ===== */
+/* ===== OCR DE CAPTURA v3 (solo estilos nuevos) ===== */
 .ocr-box{border:1px dashed var(--line);border-radius:12px;padding:10px;margin-bottom:12px}
 .ocr-box select{font-size:15px;padding:8px;margin:6px 0 8px}
 .ocr-box .btn{width:100%}
@@ -658,7 +658,7 @@ window.render();
 .xs input.ocr-dud{outline:2px solid #eab308;background:#eab30822}
 </style>
 <script>
-/* ===== OCR DE CAPTURA v2: lee una captura en el navegador (Tesseract.js) y SOLO rellena el formulario de estadísticas.
+/* ===== OCR DE CAPTURA v3: lee una captura en el navegador (Tesseract.js) y SOLO rellena el formulario de estadísticas.
    No guarda nada solo: vos revisás y tocás "Guardar" (que usa el guardado y las validaciones que ya existen).
    La imagen no se sube ni se guarda: se procesa en memoria y se descarta. No toca rivals, matches ni Firebase.
    Método principal: la pantalla de eFootball tiene la tabla siempre en el mismo lugar con 13 filas iguales,
@@ -677,14 +677,15 @@ function lev(a,b){
 }
 /* texto leído -> número entero (0-999) o null */
 function clean(s){
-  s=String(s||'').replace(/%/g,'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/\D/g,'');
+  s=String(s||'').replace(/%/g,'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/B/g,'8').replace(/\D/g,'');
   return s&&s.length<=3?Number(s):null;
 }
 /* varias lecturas -> {v, n}: valor más repetido y cuántas lecturas lo respaldan */
 function vote(arr){
   const c={};arr.filter(x=>x!=null).forEach(x=>c[x]=(c[x]||0)+1);
-  let best=null,n=0;Object.keys(c).forEach(k=>{if(c[k]>n){n=c[k];best=Number(k)}});
-  return{v:best,n};
+  let best=null,n=0,tie=false;
+  Object.keys(c).forEach(k=>{if(c[k]>n){n=c[k];best=Number(k);tie=false}else if(c[k]===n)tie=true});
+  return{v:best,n,tie};
 }
 
 /* ---------- método alternativo (captura con otra proporción): leer todo y buscar etiquetas ---------- */
@@ -788,13 +789,15 @@ async function readByLayout(bmp,onProg){
       }
       return out;
     };
-    /* devuelve {v, dud}: 2 lecturas que coinciden = confiable; si no, se agregan 2 más y se vota */
+    /* devuelve {v, dud}: 2 lecturas que coinciden = confiable; si no, se agregan lecturas con otros modos (8 y 13) y se vota.
+       Es dudoso si no hay valor, si lo respaldan menos de 2 lecturas o si hay empate con otro valor. */
     const readCell=async box=>{
       let r=await reads(box,'7',[false,true]);
       if(r[0]!=null&&r[0]===r[1])return{v:r[0],dud:false};
       r=r.concat(await reads(box,'8',[false,true]));
-      const w=vote(r);
-      return{v:w.v,dud:w.v==null||w.n<3};
+      let w=vote(r);
+      if(w.n<2||w.tie){r=r.concat(await reads(box,'13',[false,true]));w=vote(r)}
+      return{v:w.v,dud:w.v==null||w.n<2||w.tie};
     };
     const p=(L.ty1-L.ty0)/keys.length,cw=L.cell*(L.tx1-L.tx0);
     const rows={};let nulls=0;
