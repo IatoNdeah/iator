@@ -406,7 +406,9 @@ const M0=window.matchForm;
 window.matchForm=function(id){
   M0(id);
   try{const s=$('#f4'),a=s.querySelector('option[value="0"]'),b=s.querySelector('option[value="1"]');
-    a.textContent=nm('new');b.textContent=nm('old');if(hc().order[0]==='old')s.insertBefore(b,a)}catch(e){}
+    a.textContent=nm('new');b.textContent=nm('old');if(hc().order[0]==='old')s.insertBefore(b,a);
+    /* partido nuevo: queda elegido por defecto el historial de más a la izquierda (el más nuevo); al editar se respeta el que ya tenía */
+    if(!id)s.value=hc().order[0]==='old'?'1':'0'}catch(e){}
 };
 
 window.histEditor=function(){
