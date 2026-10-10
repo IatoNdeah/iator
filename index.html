@@ -61,6 +61,11 @@ const cls=n=>n>0?'g':n<0?'r':'y';
 const sorted=a=>[...a].sort((x,y)=>y.date.localeCompare(x.date)||y.ts-x.ts);
 const fdate=d=>d.split('-').reverse().join('/');
 const ME=()=>(db.cfg.me||'').trim()||'Yo';
+const rv=id=>db.rivals.find(x=>x.id===id);
+const PM=(m,r)=>r&&r.flip?{...m,my:m.opp,opp:m.my}:m;
+const pmAll=ms=>ms.map(m=>PM(m,rv(m.rid)));
+const meN=r=>r&&r.flip?r.name:ME();
+const opN=r=>r&&r.flip?ME():r.name;
 
 function applyTheme(){
   const c=db.cfg,s=document.documentElement.style;
@@ -88,13 +93,13 @@ ${st(s.gf,'Goles a favor')}${st(s.gc,'Goles en contra')}${st(sg(s.dg),'Dif. de g
 }
 
 function homeView(){
-  const s=stats(db.matches);
+  const s=stats(pmAll(db.matches));
   return `<div class="row" style="margin-bottom:0"><h1 style="margin-bottom:0">⚽ ${esc(db.cfg.name)}</h1><button class="ic" onclick="themeForm()">🎨</button></div>
 <small style="display:block;margin:2px 0 16px">Creado por Iato</small>
 <section class="card"><h2>Total general</h2>${statsHTML(s)}</section>
 <div class="row"><h2>Rivales</h2><button class="btn" onclick="rivalForm()">+ Rival</button></div>
 ${db.rivals.length?db.rivals.map(r=>{
-  const t=stats(db.matches.filter(m=>m.rid===r.id));
+  const t=stats(pmAll(db.matches.filter(m=>m.rid===r.id)));
   return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(r.name)}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
 <small>${t.pj} PJ · ${t.w}G ${t.d}E ${t.l}P · GF ${t.gf} GC ${t.gc}</small></div>`}).join('')
 :'<p class="muted">Todavía no hay rivales. Tocá “+ Rival”.</p>'}
@@ -107,8 +112,9 @@ ${db.rivals.length?db.rivals.map(r=>{
 
 const TABS=[['all','Todos'],['new','Nuevos'],['old','Viejos']];
 function rowHTML(m,r){
-  const c=m.my>m.opp?'g':m.my<m.opp?'r':'y';
-  return `<div class="m${m.old?' old':''}"><div><b class="${c}">${esc(ME())} ${m.my} - ${m.opp} ${esc(r.name)}</b><br><small>${fdate(m.date)}</small></div>
+  const p=PM(m,r);
+  const c=p.my>p.opp?'g':p.my<p.opp?'r':'y';
+  return `<div class="m${m.old?' old':''}"><div><b class="${c}">${esc(meN(r))} ${p.my} - ${p.opp} ${esc(opN(r))}</b><br><small>${fdate(m.date)}</small></div>
 <div><button class="ic" onclick="swapMatch('${m.id}')">⇄</button><button class="ic" onclick="matchForm('${m.id}')">✏️</button><button class="ic" onclick="delMatch('${m.id}')">🗑</button></div></div>`;
 }
 function histHTML(ms,r){
@@ -126,15 +132,18 @@ function rivalView(r){
   return `<div class="row"><button class="btn alt" onclick="openRival(null)">←</button>
 <div><button class="ic" onclick="rivalForm('${r.id}')">✏️</button><button class="ic" onclick="delRival('${r.id}')">🗑</button></div></div>
 <h1>${esc(r.name)}</h1>
+<small style="display:block;margin:-8px 0 6px">Ver resultados como:</small>
+<div class="tabs"><button class="${r.flip?'':'on'}" onclick="setFlip('${r.id}',false)">Soy ${esc(ME())}</button><button class="${r.flip?'on':''}" onclick="setFlip('${r.id}',true)">Soy ${esc(r.name)}</button></div>
 <div class="tabs">${TABS.map(t=>`<button class="${view.tab===t[0]?'on':''}" onclick="setTab('${t[0]}')">${t[1]} (${cnt(t[0])})</button>`).join('')}</div>
-<section class="card"><h2>Estadísticas · ${TABS.find(t=>t[0]===view.tab)[1]}</h2>${statsHTML(stats(ms))}</section>
+<section class="card"><h2>Estadísticas · ${TABS.find(t=>t[0]===view.tab)[1]}</h2>${statsHTML(stats(ms.map(m=>PM(m,r))))}</section>
 <div class="row"><h2>Historial</h2><button class="btn" onclick="matchForm()">+ Partido</button></div>
 <section class="card" style="padding-top:0">${histHTML(ms,r)}</section>`;
 }
 function setTab(t){view.tab=t;render()}
+function setFlip(id,v){rv(id).flip=v;save();render()}
 
 function render(){
-  const r=view.r&&db.rivals.find(x=>x.id===view.r);
+  const r=view.r&&rv(view.r);
   if(view.r&&!r){view.r=null}
   $('#app').innerHTML=r?rivalView(r):homeView();
 }
@@ -158,14 +167,14 @@ function preset(i){db.cfg.acc=PRE[i][1];db.cfg.bg=PRE[i][2];save();applyTheme();
 function resetCfg(){db.cfg={...DEF};save();applyTheme();render();themeForm()}
 
 function rivalForm(id){
-  const r=db.rivals.find(x=>x.id===id);
+  const r=rv(id);
   modal(`<h2>${r?'Editar':'Nuevo'} rival</h2>
 <input id="f1" placeholder="Nombre del rival" maxlength="30" value="${r?esc(r.name):''}">
 <div class="row"><button class="btn alt" onclick="closeM()">Cancelar</button><button class="btn" onclick="saveRival('${id||''}')">Guardar</button></div>`);
 }
 function saveRival(id){
   const n=$('#f1').value.trim(); if(!n)return;
-  if(id)db.rivals.find(x=>x.id===id).name=n; else db.rivals.push({id:uid(),name:n});
+  if(id)rv(id).name=n; else db.rivals.push({id:uid(),name:n});
   save();closeM();render();
 }
 function delRival(id){
@@ -177,12 +186,13 @@ function delRival(id){
 
 function matchForm(id){
   const m=db.matches.find(x=>x.id===id);
+  const r=rv(view.r);
+  const p=m?PM(m,r):null;
   const old=m?!!m.old:view.tab==='old';
-  const rv=db.rivals.find(x=>x.id===view.r);
   modal(`<h2>${m?'Editar':'Nuevo'} partido</h2>
-<div class="sc"><label>${esc(ME())}<input id="f1" type="number" inputmode="numeric" min="0" max="99" value="${m?m.my:''}"></label>
+<div class="sc"><label>${esc(meN(r))}<input id="f1" type="number" inputmode="numeric" min="0" max="99" value="${p?p.my:''}"></label>
 <button class="btn alt" onclick="swapFields()">⇄</button>
-<label>${esc(rv?rv.name:'Rival')}<input id="f2" type="number" inputmode="numeric" min="0" max="99" value="${m?m.opp:''}"></label></div>
+<label>${esc(opN(r))}<input id="f2" type="number" inputmode="numeric" min="0" max="99" value="${p?p.opp:''}"></label></div>
 <small style="display:block;margin:-4px 0 12px">Tocá ⇄ para intercambiar los goles si los pusiste al revés.</small>
 <label>Fecha<input id="f3" type="date" value="${m?m.date:today()}"></label>
 <label>Historial<select id="f4"><option value="0"${old?'':' selected'}>Nuevo</option><option value="1"${old?' selected':''}>Viejo</option></select></label>
@@ -191,8 +201,9 @@ function matchForm(id){
 function swapFields(){const a=$('#f1'),b=$('#f2'),t=a.value;a.value=b.value;b.value=t}
 function swapMatch(id){const m=db.matches.find(x=>x.id===id);if(!m)return;[m.my,m.opp]=[m.opp,m.my];save();render()}
 function saveMatch(id){
-  const my=parseInt($('#f1').value),opp=parseInt($('#f2').value),date=$('#f3').value,old=$('#f4').value==='1';
-  if(isNaN(my)||isNaN(opp)||my<0||opp<0||!date){alert('Completá goles y fecha');return}
+  const a=parseInt($('#f1').value),b=parseInt($('#f2').value),date=$('#f3').value,old=$('#f4').value==='1';
+  if(isNaN(a)||isNaN(b)||a<0||b<0||!date){alert('Completá goles y fecha');return}
+  const f=rv(view.r).flip,my=f?b:a,opp=f?a:b;
   if(id){Object.assign(db.matches.find(x=>x.id===id),{my,opp,date,old})}
   else db.matches.push({id:uid(),rid:view.r,my,opp,date,old,ts:Date.now()});
   save();closeM();render();
@@ -210,11 +221,11 @@ function dl(name,type,txt){
 function exportData(){dl('iator-respaldo-'+today()+'.json','application/json',JSON.stringify(db,null,2))}
 function exportTxt(){
   const sum=s=>`PJ ${s.pj} | Mis victorias ${s.w} | Empates ${s.d} | Mis derrotas ${s.l} | Victorias rival ${s.l} | GF ${s.gf} | GC ${s.gc} | Dif ${sg(s.dg)} | Balance ${sg(s.bal)} | ${s.pw}% V - ${s.pd}% E - ${s.pl}% D`;
-  const fmt=(a,r)=>a.length?sorted(a).map(m=>`${fdate(m.date)}  ${ME()} ${m.my} - ${m.opp} ${r.name}`):['(sin partidos)'];
-  const L=['HISTORIAL COMPLETO - '+db.cfg.name,'Exportado: '+fdate(today()),'','TOTAL GENERAL',sum(stats(db.matches)),''];
+  const fmt=(a,r)=>a.length?sorted(a).map(m=>{const p=PM(m,r);return `${fdate(m.date)}  ${meN(r)} ${p.my} - ${p.opp} ${opN(r)}`}):['(sin partidos)'];
+  const L=['HISTORIAL COMPLETO - '+db.cfg.name,'Exportado: '+fdate(today()),'','TOTAL GENERAL',sum(stats(pmAll(db.matches))),''];
   db.rivals.forEach(r=>{
     const ms=db.matches.filter(m=>m.rid===r.id),n=ms.filter(m=>!m.old),o=ms.filter(m=>m.old);
-    L.push('=== '+r.name.toUpperCase()+' ===',sum(stats(ms)),'',
+    L.push('=== '+r.name.toUpperCase()+' ===','Resultados vistos como: '+meN(r),sum(stats(ms.map(m=>PM(m,r)))),'',
       '-- Historial nuevo ('+n.length+') --',...fmt(n,r),'',
       '-- Historial viejo ('+o.length+') --',...fmt(o,r),'','');
   });
