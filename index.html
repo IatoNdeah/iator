@@ -1518,6 +1518,91 @@ window.render();
 })();
 </script>
 
+<script>
+/* ===== LADO POR NOMBRE DE EQUIPO v1: después de leer la captura, lee los nombres de los dos equipos de la cabecera
+   ("LOS PAPUS FC" / "LA TORTILLA FC") y deja elegido solo el selector "a la izquierda está".
+   Así no depende de que ya hayas escrito el resultado ni de que no sea empate. Solo mueve ese selector: no cambia nada más.
+   Envuelve window.ocrReadImage desde afuera, con try/catch: si falla, la lectura sigue como siempre. ===== */
+(function(){
+const norm=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z]/g,'');
+function lev(a,b){
+  const m=a.length,n=b.length;if(!m)return n;if(!n)return m;
+  let p=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}
+  return p[n];
+}
+/* ¿el texto leído contiene la clave (aceptando 1 letra mal leída)? */
+function has(txt,key){
+  const t=norm(txt),k=String(key||'');
+  if(k.length<4||!t)return false;
+  if(t.includes(k))return true;
+  for(let i=0;i+k.length<=t.length;i++)if(lev(t.slice(i,i+k.length),k)<=1)return true;
+  return false;
+}
+/* equipo propio: por defecto "papus" (Los Papus FC); se puede cambiar guardando otro texto en localStorage 'iator_myteam' */
+function myKey(){try{return norm(localStorage.getItem('iator_myteam')||'')||'papus'}catch(e){return 'papus'}}
+/* devuelve true si el equipo propio está a la izquierda de la captura, false si está a la derecha, null si no se puede saber */
+function decide(left,right,rivalName){
+  const k=myKey(),rk=norm(rivalName),uL=has(left,k),uR=has(right,k),rL=has(left,rk),rR=has(right,rk);
+  if(uL&&!uR)return true;if(uR&&!uL)return false;
+  if(rL&&!rR)return false;if(rR&&!rL)return true;
+  return null;
+}
+/* valor del selector: 'me' = lo de la izquierda de la captura va a la izquierda del formulario (que es el propio salvo "Soy X") */
+const selectFor=(leftIsUser,flip)=>(leftIsUser!==!!flip)?'me':'op';
+window.SIDEX={norm,has,decide,selectFor};
+
+/* ---------- lectura de los nombres (misma preparación de imagen que el resto del OCR) ---------- */
+const BOX=[[.255,.445],[.555,.745]],Y=[.155,.222];
+function crop(bmp,fx0,fx1,fy0,fy1){
+  const W=bmp.width,H=bmp.height,sx=fx0*W,sy=fy0*H,sw=(fx1-fx0)*W,sh=(fy1-fy0)*H,th=90,tw=Math.max(8,Math.round(sw*th/sh));
+  const c=document.createElement('canvas');c.width=tw;c.height=th;
+  const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(bmp,sx,sy,sw,sh,0,0,tw,th);
+  const im=x.getImageData(0,0,tw,th),d=im.data,N=tw*th,g=new Uint8Array(N),hist=new Array(256).fill(0);let sum=0;
+  for(let i=0;i<N;i++){const v=(d[i*4]*299+d[i*4+1]*587+d[i*4+2]*114)/1000|0;g[i]=v;hist[v]++;sum+=v}
+  let sB=0,wB=0,mx=0,thr=128;
+  for(let t=0;t<256;t++){wB+=hist[t];if(!wB)continue;const wF=N-wB;if(!wF)break;sB+=t*hist[t];const mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)*(mB-mF);if(v>mx){mx=v;thr=t}}
+  const dark=sum/N<128;
+  for(let i=0;i<N;i++){const o=((g[i]>thr)===dark)?0:255;d[i*4]=d[i*4+1]=d[i*4+2]=o;d[i*4+3]=255}
+  x.putImageData(im,0,0);
+  const out=document.createElement('canvas');out.width=tw+24;out.height=th+24;
+  const ox=out.getContext('2d');ox.fillStyle='#fff';ox.fillRect(0,0,out.width,out.height);ox.drawImage(c,12,12);
+  c.width=c.height=0;return out;
+}
+async function names(file){
+  if(!window.Tesseract)return null;
+  let bmp;try{bmp=await createImageBitmap(file)}catch(e){return null}
+  let worker;
+  try{
+    worker=await Tesseract.createWorker('eng');
+    await worker.setParameters({tessedit_pageseg_mode:'7'});
+    const out=[];
+    for(const b of BOX){const cv=crop(bmp,b[0],b[1],Y[0],Y[1]);const {data}=await worker.recognize(cv);cv.width=cv.height=0;out.push(data.text||'')}
+    return out;
+  }finally{try{worker&&await worker.terminate()}catch(e){}if(bmp.close)bmp.close()}
+}
+
+const O0=window.ocrReadImage;
+if(typeof O0==='function'){
+  window.ocrReadImage=async function(file,onProg){
+    const res=await O0.apply(this,arguments);
+    try{
+      if(onProg)onProg(0.97,'equipos');
+      const r=view&&view.r?rv(view.r):null,nm=await names(file);
+      if(nm){
+        const left=decide(nm[0],nm[1],r?r.name:'');
+        if(left!=null){
+          res.leftIsUser=left;
+          const v=selectFor(left,r&&r.flip);
+          document.querySelectorAll('#m select[data-o="side"]').forEach(s=>{s.value=v});
+        }
+      }
+    }catch(e){console.error('Lado por equipo:',e)}
+    return res;
+  };
+}
+})();
+</script>
 <script type="module">
 /* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
