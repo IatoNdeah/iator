@@ -859,6 +859,7 @@ async function readImage(file,onProg){
   }finally{if(bmp.close)bmp.close()}
 }
 
+window.ocrReadImage=readImage;
 function addBox(id){
   const m=db.matches.find(x=>x.id===id),r=m&&rv(m.rid);if(!m||!r)return;
   const wrap=document.querySelector('#m>div');if(!wrap||wrap.querySelector('.ocr-box'))return;
@@ -1283,6 +1284,155 @@ const OR0=window.openRival;
 window.openRival=function(id){view.q='';view.f={};view.fa=false;return OR0.apply(this,arguments)};
 })();
 </script>
+
+<script>
+/* ===== NUEVO PARTIDO EN UNA SOLA PANTALLA v1: al tocar "+ Partido" aparecen arriba la lectura de captura, después el resultado (el formulario de siempre) y abajo las estadísticas. Editar un partido no cambia. ===== */
+(function(){
+const FIELDS=window.MSTAT_FIELDS||[];
+if(!FIELDS.length||typeof window.matchForm!=='function'||typeof window.saveMatch!=='function')return;
+const mx=k=>k==='pos'?100:999;
+const inp=(k,s)=>document.querySelector('#m [data-k="'+k+'"][data-s="'+s+'"]');
+const val=(k,s)=>{const e=inp(k,s);return e&&e.value!==''?Number(e.value):null};
+const hasAny=rec=>!!rec&&FIELDS.some(([k])=>rec[k]);
+
+/* avisos lógicos (los mismos que usa el guardado de estadísticas) sobre una lectura {k:{a,b}} */
+function rules(rec){
+  const W=[],g=(k,s)=>rec[k]&&rec[k][s];
+  if(rec.pos&&rec.pos.a!=null&&rec.pos.b!=null&&rec.pos.a+rec.pos.b!==100)W.push('La posesión de los dos lados no suma 100 %.');
+  ['a','b'].forEach(s=>{
+    if(g('shots',s)!=null&&g('sot',s)!=null&&g('sot',s)>g('shots',s))W.push('Disparos al arco es mayor que Disparos.');
+    if(g('pass',s)!=null&&g('passok',s)!=null&&g('passok',s)>g('pass',s))W.push('Pases completados es mayor que Pases.');
+  });
+  return [...new Set(W)];
+}
+/* lee las estadísticas escritas en la pantalla; a = lado de "my" (igual que los goles) */
+function collect(flip){
+  const rec={};let bad=false;
+  const num=(el,max)=>{if(!el)return null;const v=el.value.trim();if(v==='')return null;const n=Number(v);return Number.isInteger(n)&&n>=0&&n<=max?n:NaN};
+  FIELDS.forEach(([k])=>{
+    const x=num(inp(k,'l'),mx(k)),y=num(inp(k,'r'),mx(k));
+    if(Number.isNaN(x)||Number.isNaN(y)){bad=true;return}
+    if(x===null&&y===null)return;
+    const o={};if(x!==null)o[flip?'b':'a']=x;if(y!==null)o[flip?'a':'b']=y;rec[k]=o;
+  });
+  return {rec,bad};
+}
+
+const statsHTML=r=>`<div id="nsStats"><h3 class="sec">Estadísticas (opcional)</h3>
+<div class="xs xh"><b class="gf">${esc(meN(r))}</b><span></span><b class="gc">${esc(opN(r))}</b></div>
+${FIELDS.map(([k,l])=>`<div class="xs"><input data-k="${k}" data-s="l" type="number" inputmode="numeric" min="0" max="${mx(k)}"><span>${l}</span><input data-k="${k}" data-s="r" type="number" inputmode="numeric" min="0" max="${mx(k)}"></div>`).join('')}</div>`;
+
+function swapStats(){
+  FIELDS.forEach(([k])=>{
+    const a=inp(k,'l'),b=inp(k,'r');if(!a||!b)return;
+    const v=a.value,qa=a.classList.contains('ocr-dud'),qb=b.classList.contains('ocr-dud');
+    a.value=b.value;b.value=v;
+    qa?b.classList.add('ocr-dud'):b.classList.remove('ocr-dud');
+    qb?a.classList.add('ocr-dud'):a.classList.remove('ocr-dud');
+  });
+}
+const dud=el=>{if(!el)return;el.classList.add('ocr-dud');el.addEventListener('input',()=>el.classList.remove('ocr-dud'),{once:true})};
+
+function addUI(){
+  const wrap=document.querySelector('#m>div'),r=rv(view.r);
+  if(!wrap||!r||wrap.querySelector('#nsStats'))return;
+  const rs=wrap.querySelectorAll('.row'),row=rs[rs.length-1];
+  if(!row)return;
+  /* abajo de todo: estadísticas */
+  row.insertAdjacentHTML('beforebegin',statsHTML(r));
+  const pos=['l','r'].map(s=>inp('pos',s));
+  pos.forEach((e,i)=>e&&e.addEventListener('change',()=>{const o=pos[1-i],v=Number(e.value);if(o&&o.value===''&&e.value!==''&&v>=0&&v<=100)o.value=100-v}));
+  /* arriba de todo: lectura de captura (misma caja que en las estadísticas) */
+  const h2=wrap.querySelector('h2');
+  if(typeof window.ocrReadImage!=='function'||!h2)return;
+  const box=document.createElement('div');box.className='ocr-box';
+  box.innerHTML=`<button class="btn alt" type="button" data-o="go">📷 Leer captura</button>
+<input type="file" accept="image/*" hidden data-o="file">
+<label style="display:block;margin-top:8px"><small>En la captura, a la izquierda está:</small>
+<select data-o="side"><option value="me">${esc(meN(r))}</option><option value="op">${esc(opN(r))}</option></select></label>
+<div class="ocr-msg" data-o="msg">La imagen se lee en tu celular y se descarta: no se sube ni se guarda. Se completan el resultado y las estadísticas; después revisás todo antes de guardar.</div>`;
+  h2.insertAdjacentElement('afterend',box);
+  const q=s=>box.querySelector('[data-o="'+s+'"]'),msg=t=>{q('msg').textContent=t};
+  let hasRead=false;
+  q('go').onclick=()=>q('file').click();
+  /* si corregís de qué lado está cada uno, se invierten juntos el resultado y las estadísticas leídas */
+  q('side').onchange=()=>{if(!hasRead)return;try{swapStats();if(typeof window.swapFields==='function')window.swapFields();else{const a=$('#f1'),b=$('#f2'),t=a.value;a.value=b.value;b.value=t}}catch(e){console.error('Nuevo partido:',e)}};
+  q('file').onchange=async ev=>{
+    const f=ev.target.files&&ev.target.files[0];if(!f)return;
+    const btn=q('go');btn.disabled=true;msg('Preparando la imagen…');
+    try{
+      const res=await window.ocrReadImage(f,(p,t)=>msg('Leyendo… '+Math.round(p*100)+' %'+(t?' ('+t+')':'')));
+      const f1=$('#f1'),f2=$('#f2'),g1=f1.value===''?null:Number(f1.value),g2=f2.value===''?null:Number(f2.value);
+      let leftMe=q('side').value==='me',note='';
+      if(res.score){
+        const l=res.score.l,rr=res.score.r;
+        if(g1!=null&&g2!=null){
+          /* ya había un resultado escrito: se usa para saber de qué lado está cada uno */
+          if(l!==rr&&l===g1&&rr===g2){leftMe=true}
+          else if(l!==rr&&l===g2&&rr===g1){leftMe=false}
+          else if(l===g1&&rr===g2)note=' El resultado coincide, pero es empate: revisá el selector de lado.';
+          else note=' ⚠ El resultado que leí ('+l+'-'+rr+') no coincide con el que escribiste ('+g1+'-'+g2+'): revisá que sea la captura correcta y el lado.';
+        }else{
+          f1.value=leftMe?l:rr;f2.value=leftMe?rr:l;dud(f1);dud(f2);
+          note=' Resultado leído: '+l+'-'+rr+'. Revisá el selector de lado'+(l===rr?' (es empate)':'')+'.';
+        }
+        q('side').value=leftMe?'me':'op';
+      }else note=' No pude leer el resultado: escribilo a mano y revisá el selector de lado.';
+      const put=(k,s,v,d)=>{const el=inp(k,s);if(!el)return;if(v!=null)el.value=v;if(d||v==null)dud(el)};
+      let n=0,d=0;
+      Object.keys(res.rows||{}).forEach(k=>{
+        const row=res.rows[k],max=mx(k);
+        let a=row.a,b=row.b,du=row.dud;
+        if(a!=null&&a>max){a=null;du=true}if(b!=null&&b>max){b=null;du=true}
+        put(k,'l',leftMe?a:b,du);put(k,'r',leftMe?b:a,du);
+        n++;if(du)d++;
+      });
+      const mark=(k,s)=>dud(inp(k,s));
+      const pl=val('pos','l'),pr=val('pos','r');if(pl!=null&&pr!=null&&pl+pr!==100){mark('pos','l');mark('pos','r');d++}
+      ['l','r'].forEach(s=>{
+        if(val('shots',s)!=null&&val('sot',s)!=null&&val('sot',s)>val('shots',s)){mark('shots',s);mark('sot',s);d++}
+        if(val('pass',s)!=null&&val('passok',s)!=null&&val('passok',s)>val('pass',s)){mark('pass',s);mark('passok',s);d++}
+      });
+      hasRead=n>0||!!res.score;
+      msg(n?'Leí '+n+' de '+FIELDS.length+' estadísticas'+(res.mode==='general'?' (con el método general: esta captura tiene otra proporción, así que revisá bien).':'.')+(d?' Lo que quedó en amarillo es dudoso o está vacío: revisalo contra la captura.':'')+note
+        :'No pude leer estadísticas en esa imagen. Probá con una captura completa de la pantalla o cargá a mano.'+note);
+    }catch(e){
+      console.error('Nuevo partido:',e);msg('No se pudo leer la captura: '+(e&&e.message?e.message:'error')+'. Podés cargar a mano.');
+    }finally{btn.disabled=false;ev.target.value=''}
+  };
+}
+
+/* "+ Partido" (sin id): se agrega la lectura de captura arriba y las estadísticas abajo; "Editar" queda igual */
+const M1=window.matchForm;
+window.matchForm=function(id){
+  const res=M1.apply(this,arguments);
+  if(!id){try{addUI()}catch(e){console.error('Nuevo partido:',e)}}
+  return res;
+};
+
+/* al guardar un partido NUEVO con estadísticas escritas: se guarda el partido como siempre y después sus estadísticas */
+const S1=window.saveMatch;
+window.saveMatch=function(id){
+  if(id||!document.querySelector('#nsStats'))return S1.apply(this,arguments);
+  const r=rv(view.r),flip=!!(r&&r.flip),c=collect(flip);
+  if(c.bad){alert('Revisá las estadísticas: solo números enteros (la posesión va de 0 a 100).');return}
+  const W=rules(c.rec);
+  if(hasAny(c.rec)&&W.length&&!confirm('Hay valores raros en las estadísticas:\n• '+W.join('\n• ')+'\n\n¿Guardar igual?'))return;
+  const before=new Set(db.matches.map(m=>m.id));
+  const res=S1.apply(this,arguments);
+  try{
+    const nm=db.matches.find(m=>!before.has(m.id));
+    if(nm&&hasAny(c.rec)){c.rec.ts=Date.now();window.mstatsPut&&window.mstatsPut(nm.id,c.rec);render()}
+  }catch(e){console.error('Nuevo partido:',e)}
+  return res;
+};
+window._ns={rules,collect,swapStats};
+})();
+</script>
+<style>
+/* ===== NUEVO PARTIDO EN UNA SOLA PANTALLA v1 (solo estilos nuevos) ===== */
+.sc input.ocr-dud{outline:2px solid #eab308;background:#eab30822}
+</style>
 
 <script type="module">
 /* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
