@@ -1434,6 +1434,47 @@ window._ns={rules,collect,swapStats};
 .sc input.ocr-dud{outline:2px solid #eab308;background:#eab30822}
 </style>
 
+<style>
+/* ===== PLEGABLE DEL HISTORIAL DE MODIFICACIONES v1 (solo estilos nuevos; usa las clases .fold/.fh/.fb/.fi que ya existen) ===== */
+.k-log .fh{box-shadow:inset 4px 0 0 #94a3b8}
+</style>
+<script>
+/* ===== PLEGABLE DEL HISTORIAL DE MODIFICACIONES v1: mete la tarjeta "Historial de modificaciones" en un apartado que se expande y se contrae,
+   igual que "Historial de partidos" y "Verificador de datos". No cambia el contenido ni el registro: solo lo envuelve al dibujar.
+   Arranca contraído. Recuerda abierto/cerrado en este dispositivo con su propia clave (iator_ui_log_v1), para no pisar la de los otros plegables. ===== */
+(function(){
+const KEYUI='iator_ui_log_v1';
+const abierto=()=>{try{return localStorage.getItem(KEYUI)==='1'}catch(e){return false}};
+const guardar=v=>{try{localStorage.setItem(KEYUI,v?'1':'0')}catch(e){}};
+function plegar(){
+  const app=document.getElementById('app');
+  if(!app||app.querySelector('.k-log'))return;
+  const h2=[...app.querySelectorAll('section.card>h2')].find(h=>h.textContent.trim()==='Historial de modificaciones');
+  if(!h2)return;
+  const sec=h2.parentNode;
+  const f=document.createElement('div'),h=document.createElement('div'),b=document.createElement('div'),i=document.createElement('div');
+  f.className='fold k-log';h.className='fh';b.className='fb';i.className='fi';
+  h.setAttribute('role','button');h.tabIndex=0;
+  const paint=()=>{
+    const o=abierto();
+    f.classList.toggle('open',o);h.setAttribute('aria-expanded',o);
+    h.innerHTML='<div><b>Historial de modificaciones</b><br><small>'+(o?'Presionar para ocultar':'Presionar para ver')+'</small></div><span class="ar">'+(o?'⬆':'⬇')+'</span>';
+  };
+  const tg=()=>{guardar(!abierto());paint()};
+  h.addEventListener('click',tg);
+  h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg()}});
+  paint();
+  sec.parentNode.insertBefore(f,sec);
+  i.appendChild(sec);
+  h2.style.display='none';
+  b.appendChild(i);f.append(h,b);
+}
+const R9=window.render;
+window.render=function(){R9();try{plegar()}catch(e){console.error('Plegable del historial de modificaciones:',e)}};
+window.render();
+})();
+</script>
+
 <script type="module">
 /* ====== SINCRONIZACIÓN EN LA NUBE (Firebase / Realtime Database) ====== */
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
