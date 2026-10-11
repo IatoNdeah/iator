@@ -139,36 +139,17 @@ function rivalView(r){
 <div class="tabs">${TABS.map(t=>`<button class="${view.tab===t[0]?'on':''}" onclick="setTab('${t[0]}')">${t[1]} (${cnt(t[0])})</button>`).join('')}</div>
 <section class="card"><h2>Estadísticas · ${TABS.find(t=>t[0]===view.tab)[1]}</h2>${statsHTML(stats(ms.map(m=>PM(m,r))))}</section>
 <div class="row"><h2>Historial</h2><button class="btn" onclick="matchForm()">+ Partido</button></div>
-<div class="card" style="padding:10px"><input id="q" type="search" autocomplete="off" placeholder="Buscar: 3-2 o 05/2026" value="${esc(view.q||'')}" oninput="doSearch(this.value)" style="margin:0 0 8px;font-size:16px;padding:10px">
-<div class="row" style="margin:0"><button class="btn alt" style="padding:8px 10px;font-size:13px" onclick="toggleBoth()">↔ Ambos sentidos: ${view.qb===false?'No':'Sí'}</button><small id="qc">${qCount(ms,r)}</small><button class="btn alt" style="padding:8px 10px;font-size:13px" onclick="clearSearch()">Limpiar</button></div></div>
-<section id="hist" class="card" style="padding-top:0">${histHTML(searchMs(ms,r),r)}</section>`;
+<section class="card" style="padding-top:0">${histHTML(ms,r)}</section>`;
 }
 function setTab(t){view.tab=t;render()}
 function setFlip(id,v){rv(id).flip=v;save();render()}
-
-/* Buscador del historial (solo filtra lo que se ve; no modifica ningún dato) */
-function tabMs(r){const a=sorted(db.matches.filter(m=>m.rid===r.id));return view.tab==='new'?a.filter(m=>!m.old):view.tab==='old'?a.filter(m=>m.old):a}
-function searchMs(ms,r){
-  const q=(view.q||'').trim().toLowerCase();if(!q)return ms;
-  const s=q.match(/^(\d+)\s*[-–:x]\s*(\d+)$/);
-  if(s){const a=+s[1],b=+s[2],both=view.qb!==false;
-    return ms.filter(m=>{const p=PM(m,r);return(p.my===a&&p.opp===b)||(both&&p.my===b&&p.opp===a)})}
-  return ms.filter(m=>(fdate(m.date)+' '+meN(r)+' '+opN(r)).toLowerCase().includes(q));
-}
-function qCount(ms,r){return(view.q||'').trim()?searchMs(ms,r).length+' de '+ms.length:''}
-function doSearch(v){
-  view.q=v;const r=rv(view.r);if(!r)return;
-  const all=tabMs(r);$('#hist').innerHTML=histHTML(searchMs(all,r),r);$('#qc').textContent=qCount(all,r);
-}
-function toggleBoth(){view.qb=view.qb===false;render()}
-function clearSearch(){view.q='';render()}
 
 function render(){
   const r=view.r&&rv(view.r);
   if(view.r&&!r){view.r=null}
   $('#app').innerHTML=r?rivalView(r):homeView();
 }
-function openRival(id){view.r=id;view.tab='all';view.q='';render();scrollTo(0,0)}
+function openRival(id){view.r=id;view.tab='all';render();scrollTo(0,0)}
 
 function modal(h){closeM();const d=document.createElement('div');d.id='m';d.innerHTML=`<div>${h}</div>`;document.body.appendChild(d);const i=d.querySelector('input');i&&i.focus()}
 function closeM(){const m=$('#m');m&&m.remove()}
@@ -252,7 +233,6 @@ function exportTxt(){
   });
   dl('iator-historial-'+today()+'.txt','text/plain;charset=utf-8',L.join('\n'));
 }
-let pendingImport=null;
 function importData(inp){
   const f=inp.files[0]; if(!f)return;
   const rd=new FileReader();
@@ -260,42 +240,1048 @@ function importData(inp){
     try{
       const d=JSON.parse(rd.result);
       if(!Array.isArray(d.rivals)||!Array.isArray(d.matches))throw 0;
-      pendingImport=d;importForm(d);
+      if(!confirm('Esto reemplaza todos los datos actuales. ¿Continuar?'))return;
+      db=d;db.cfg=Object.assign({},DEF,db.cfg||{});save();view={r:null,tab:'all'};applyTheme();render();
     }catch(e){alert('Archivo no válido')}
     inp.value='';
   };
   rd.readAsText(f);
 }
-function importForm(d){
-  const o=d.matches.filter(m=>m.old).length,n=d.matches.length-o;
-  modal(`<h2>Importar historial</h2>
-<small style="display:block;margin-bottom:8px">El archivo trae ${d.matches.length} partido(s): ${n} en EF27 y ${o} en EF26.</small>
-<div style="display:flex;flex-direction:column;gap:8px;margin:8px 0 12px">
-<button class="btn" onclick="doImport('old')">Cargar como Historial EF26</button>
-<button class="btn" onclick="doImport('new')">Cargar como Historial EF27</button>
-<button class="btn alt" onclick="doImport('file')">Reemplazar todo (tal como está el archivo)</button></div>
-<small style="display:block;margin-bottom:12px">EF26 o EF27 reemplazan solo ese historial y no tocan el otro. “Reemplazar todo” borra lo que hay ahora.</small>
-<div class="row"><button class="btn alt" onclick="pendingImport=null;closeM()">Cancelar</button></div>`);
-}
-function doImport(mode){
-  const d=pendingImport; if(!d)return;
-  if(mode==='file'){
-    if(!confirm('Esto reemplaza todos los datos actuales. ¿Continuar?'))return;
-    db=d;db.cfg=Object.assign({},DEF,db.cfg||{});
-  }else{
-    const old=mode==='old',nm=old?'EF26':'EF27';
-    if(!confirm('Esto reemplaza los partidos actuales del Historial '+nm+'. El otro historial no se toca. ¿Continuar?'))return;
-    const ids=new Set(d.matches.map(m=>m.id));
-    const keep=db.matches.filter(m=>!!m.old!==old&&!ids.has(m.id));
-    db.matches=[...keep,...d.matches.map(m=>({...m,old}))];
-    d.rivals.forEach(r=>{if(!rv(r.id))db.rivals.push({id:r.id,name:r.name,ts:r.ts})});
-  }
-  pendingImport=null;
-  save();view={r:null,tab:'all'};closeM();applyTheme();render();
-}
 
 applyTheme();render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+</script>
+
+<style>
+/* Apartados plegables (solo estilos nuevos) */
+.fold{margin-bottom:12px}
+.fh{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.fh:active{background:var(--line)}
+.fh b{font-size:16px}.fh small{font-size:13px}
+.fh .ar{color:var(--acc);font-size:20px;flex:none}
+.fb{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.fold.open .fb{grid-template-rows:1fr}
+.fi{min-height:0;overflow:hidden;visibility:hidden;transition:visibility .3s}
+.fold.open .fi{visibility:visible}
+.fi>:first-child{margin-top:8px}
+</style>
+<script>
+/* ===== AMPLIACIONES v1: Datos:, Verificador, Historial de modificaciones. Solo leen db; no modifican partidos. ===== */
+(function(){
+const KL='iator_log_v1',lg=()=>{try{return JSON.parse(localStorage.getItem(KL)||'[]')}catch(e){return[]}};
+const safe=f=>{try{return f()}catch(e){return{}}};
+const nm=id=>(rv(id)||{name:'?'}).name;
+const snap=()=>Object.fromEntries(db.matches.map(m=>[m.id,{k:JSON.stringify([m.rid,m.my,m.opp,m.date,!!m.old]),t:`${nm(m.rid)} ${m.my}-${m.opp} (${fdate(m.date||'')}, ${m.old?'EF26':'EF27'})`}]));
+function track(fn,a){
+  const b=safe(snap),res=fn.apply(null,a),c=safe(snap),t=new Date().toISOString(),L=[];
+  for(const id in c){if(!b[id])L.push({t,k:'Alta',n:c[id].t});else if(b[id].k!==c[id].k)L.push({t,k:'Edición',a:b[id].t,n:c[id].t})}
+  for(const id in b)if(!c[id])L.push({t,k:'Eliminación',a:b[id].t});
+  if(L.length)try{localStorage.setItem(KL,JSON.stringify([...lg(),...L].slice(-500)))}catch(e){}
+  return res;
+}
+['saveMatch','delMatch','swapMatch','delRival'].forEach(f=>{const o=window[f];window[f]=function(...a){return track(o,a)}});
+
+const out=m=>m.my>m.opp?'W':m.my<m.opp?'L':'D';
+const chip=k=>`<span class="ch ${k}">${{W:'V',D:'E',L:'D'}[k]}</span>`;
+const runs=(a,p)=>{let b=0,c=0;a.forEach(x=>{c=p(x)?c+1:0;b=Math.max(b,c)});return b};
+const since=(a,p)=>{for(let i=a.length-1;i>=0;i--)if(p(a[i]))return a.length-1-i;return null};
+const mx=(a,f)=>a.reduce((x,y)=>f(y)>f(x)?y:x,a[0]);
+const per=(a,n)=>{const g={};a.forEach(m=>{const k=m.date.slice(0,n);g[k]=(g[k]||0)+Math.sign(m.my-m.opp)});const e=Object.entries(g);
+  return[e.reduce((x,y)=>y[1]>x[1]?y:x,e[0]),e.reduce((x,y)=>y[1]<x[1]?y:x,e[0])]};
+const R0=Math.random();
+const row=(l,v)=>`<div class="m"><small>${l}</small><b style="text-align:right">${v}</b></div>`;
+
+function datos(r){
+  const ms=db.matches.filter(m=>m.rid===r.id&&m.date).sort((x,y)=>x.date.localeCompare(y.date)||(x.ts||0)-(y.ts||0)).map(m=>PM(m,r));
+  if(!ms.length)return `<section class="card dt"><h2>Datos:</h2><p class="muted">Todavía no hay partidos para calcular datos.</p></section>`;
+  const A=esc(meN(r)),B=esc(opN(r)),n=ms.length,s=stats(ms),F=[];
+  const d=m=>`${A} ${m.my}-${m.opp} ${B} · ${fdate(m.date)}`;
+  const add=(g,l,v)=>F.push([g,l,v]);
+  const fm=v=>v===null?`nunca ganó (${n} PJ)`:v===0?'ganó el último':`${v} sin ganar`;
+  add(0,'Promedio de goles por partido',`${((s.gf+s.gc)/n).toFixed(2)} (${A} ${(s.gf/n).toFixed(2)} · ${B} ${(s.gc/n).toFixed(2)})`);
+  add(0,'Ventaja histórica',s.bal===0?'Igualados en victorias':`${s.bal>0?A:B} +${Math.abs(s.bal)} victorias`);
+  add(0,'Diferencia de goles',s.dg===0?'Igualados':`${s.dg>0?A:B} +${Math.abs(s.dg)}`);
+  [5,10].forEach(k=>{if(n>=1){const t=stats(ms.slice(-k));add(0,`Últimos ${Math.min(k,n)} (${A})`,`${t.w}G ${t.d}E ${t.l}P`)}});
+  add(0,'Últimos 10 (desde '+A+')',ms.slice(-10).map(m=>chip(out(m))).join(''));
+  const L=ms[n-1];add(0,'Último encuentro',`${out(L)==='W'?A:out(L)==='L'?B:'Empate'} · ${d(L)}`);
+  let c=0;const lo=out(L);for(let i=n-1;i>=0&&out(ms[i])===lo;i--)c++;
+  add(1,'Racha actual',chip(lo).repeat(Math.min(c,10))+' '+(lo==='D'?`${c} empate(s) seguido(s)`:`${lo==='W'?A:B}: ${c} victoria(s) seguida(s)`));
+  add(1,'Mayor racha de victorias',`${A} ${runs(ms,m=>m.my>m.opp)} · ${B} ${runs(ms,m=>m.my<m.opp)}`);
+  add(1,'Mayor racha sin perder',`${A} ${runs(ms,m=>m.my>=m.opp)} · ${B} ${runs(ms,m=>m.my<=m.opp)}`);
+  add(1,'Mayor racha sin ganar (sequía histórica)',`${A} ${runs(ms,m=>m.my<=m.opp)} · ${B} ${runs(ms,m=>m.my>=m.opp)}`);
+  add(1,'Sequía actual',`${A}: ${fm(since(ms,m=>m.my>m.opp))} · ${B}: ${fm(since(ms,m=>m.my<m.opp))}`);
+  const ga=mx(ms,m=>m.my-m.opp),gb=mx(ms,m=>m.opp-m.my);
+  add(2,'Mayor goleada de '+A,ga.my>ga.opp?d(ga):'—');
+  add(2,'Mayor goleada de '+B,gb.opp>gb.my?d(gb):'—');
+  add(2,'Partido con más goles',`${d(mx(ms,m=>m.my+m.opp))} (${mx(ms,m=>m.my+m.opp).my+mx(ms,m=>m.my+m.opp).opp})`);
+  const gp=mx(ms,m=>Math.max(m.my,m.opp));add(2,'Más goles de un jugador en un partido',`${gp.my>=gp.opp?A:B} ${Math.max(gp.my,gp.opp)} · ${fdate(gp.date)}`);
+  const cs={};ms.forEach(m=>{const k=m.my+'-'+m.opp;cs[k]=(cs[k]||0)+1});const top=Object.entries(cs).sort((x,y)=>y[1]-x[1])[0];
+  add(2,'Marcador más repetido',top[1]>1?`${top[0]} (${top[1]} veces)`:'Ninguno se repite');
+  [['mes',7],['año',4]].forEach(([nom,len])=>{const[hi,lw]=per(ms,len);
+    add(2,`Mejor ${nom} de ${A}`,hi[1]>0?`${hi[0]} (+${hi[1]})`:'—');add(2,`Mejor ${nom} de ${B}`,lw[1]<0?`${lw[0]} (+${-lw[1]})`:'—')});
+  const G=['Cara a cara','Rachas y sequías','Récords'];
+  const pick=F[Math.floor(R0*F.length)];
+  return `<section class="card dt"><h2>Datos:</h2>
+<div class="st" style="text-align:left;margin-bottom:8px"><small>Estadística del día</small><b style="font-size:15px">${pick[1]}: ${pick[2]}</b></div>
+${G.map((t,i)=>`<div class="dg dg${i}"><h3 class="sec">${t}</h3>`+F.filter(f=>f[0]===i).map(f=>row(f[1],f[2])).join('')+'</div>').join('')}</section>`;
+}
+
+function verify(){
+  const W=[],seen={},td=today();
+  db.matches.forEach(m=>{
+    const r=rv(m.rid),lab=`${esc(r?r.name:'(rival inexistente)')} ${esc(m.my)}-${esc(m.opp)} · ${esc(m.date||'sin fecha')}`,p=(t,s)=>W.push([lab,t,s||'y']);
+    const ok=Number.isInteger(m.my)&&Number.isInteger(m.opp)&&m.my>=0&&m.opp>=0;
+    if(!r)p('Pertenece a un rival que no existe.','r');
+    if(!ok)p('Marcador incompleto o no numérico.','r');
+    if(!/^\d{4}-\d\d-\d\d$/.test(m.date||'')||isNaN(new Date(m.date)))p('Fecha inválida o ausente.','r');
+    else if(m.date>td)p('Fecha futura.');
+    if(ok&&(m.my+m.opp>=10||Math.abs(m.my-m.opp)>=6))p('Marcador inusual (puede estar bien).');
+    const k=[m.rid,m.my,m.opp,m.date].join('|');(seen[k]=seen[k]||{n:0,lab}).n++;
+  });
+  Object.values(seen).forEach(o=>{if(o.n>1)W.push([o.lab,`Posible duplicado: ${o.n} partidos con mismo rival, marcador y fecha (puede ser legítimo).`])});
+  return `<section class="card" id="ver"><h2>Verificador de datos</h2><small style="display:block;margin-bottom:6px">Solo avisa: no edita, corrige ni borra nada.</small>${W.length?`<small style="display:block;margin-bottom:6px"><span class="y">${W.filter(w=>w[2]!=='r').length} advertencia(s)</span> · <span class="r">${W.filter(w=>w[2]==='r').length} posible(s) error(es) grave(s)</span></small>`:''}
+${W.length?W.map(w=>`<div class="m w${w[2]||'y'}" style="display:block"><span class="tg t${w[2]||'y'}">${w[2]==='r'?'POSIBLE ERROR GRAVE':'ADVERTENCIA'}</span><b>${w[0]}</b><br><small>${w[1]}</small></div>`).join(''):'<p class="muted">Sin avisos. No se detectó nada raro.</p>'}</section>`;
+}
+
+function logHTML(){
+  const l=lg().reverse().slice(0,50),f=t=>new Date(t).toLocaleString('es');
+  return `<section class="card"><h2>Historial de modificaciones</h2>
+${l.length?l.map(e=>`<div class="m" style="display:block"><small>${f(e.t)} · <span class="tg tg${e.k==='Alta'?'a':e.k==='Edición'?'e':'x'}">${e.k}</span></small><br><b style="font-size:14px">${e.a?esc(e.a):''}${e.a&&e.n?' → ':''}${e.n?esc(e.n):''}</b></div>`).join(''):'<p class="muted">Todavía no hay cambios registrados. Se registran desde ahora (altas, ediciones y eliminaciones hechas en este dispositivo).</p>'}</section>`;
+}
+
+const UI='iator_ui_v1';let op={};try{op=JSON.parse(localStorage.getItem(UI))||{}}catch(e){}
+function fold(key,title,nodes,hide){
+  if(!nodes[0]||!nodes[nodes.length-1])return;
+  const f=document.createElement('div'),h=document.createElement('div'),b=document.createElement('div'),i=document.createElement('div');
+  f.className='fold k-'+key;h.className='fh';b.className='fb';i.className='fi';h.setAttribute('role','button');h.tabIndex=0;
+  const paint=()=>{const o=!!op[key];f.classList.toggle('open',o);h.setAttribute('aria-expanded',o);
+    h.innerHTML=`<div><b>${title}</b><br><small>${o?'Presionar para ocultar':'Presionar para ver'}</small></div><span class="ar">${o?'⬆':'⬇'}</span>`};
+  const tg=()=>{op[key]=!op[key];try{localStorage.setItem(UI,JSON.stringify(op))}catch(e){}paint()};
+  h.addEventListener('click',tg);
+  h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg()}});
+  paint();
+  nodes[0].parentNode.insertBefore(f,nodes[0]);
+  nodes.forEach(n=>i.appendChild(n));
+  if(hide)hide.style.display='none';
+  b.appendChild(i);f.append(h,b);
+}
+function folds(){
+  const app=$('#app');
+  const bt=app.querySelector('button[onclick="matchForm()"]'),row=bt&&bt.closest('.row');
+  if(row&&row.nextElementSibling){row.style.justifyContent='flex-end';fold('hist','Historial de partidos',[row,row.nextElementSibling],row.querySelector('h2'))}
+  const v=app.querySelector('#ver');
+  if(v)fold('ver','Verificador de datos',[v],v.querySelector('h2'));
+}
+const R=window.render;
+window.render=function(){R();try{const r=view.r&&rv(view.r);$('#app').insertAdjacentHTML('beforeend',(r?datos(r):verify())+logHTML())}catch(e){console.error('Ampliaciones:',e)}
+  try{folds()}catch(e){console.error('Plegables:',e)}};
+window.render();
+})();
+</script>
+
+<script>
+/* ===== ORDEN Y NOMBRES DE HISTORIALES: solo cambia el orden visual y las etiquetas; no toca partidos ni el campo old ===== */
+(function(){
+const HD={new:'EF27',old:'EF26'};
+function hc(){
+  const h=db.hcfg=db.hcfg&&typeof db.hcfg==='object'?db.hcfg:{};
+  if(!(Array.isArray(h.order)&&h.order.length===2&&h.order.includes('new')&&h.order.includes('old')))h.order=['new','old'];
+  if(!h.names||typeof h.names!=='object')h.names={};
+  return h;
+}
+const nm=k=>String(hc().names[k]||'').trim()||HD[k];
+function applyHist(){TABS.length=0;TABS.push(['all','Todos'],...hc().order.map(k=>[k,nm(k)]))}
+
+const H0=window.histHTML;
+window.histHTML=function(ms,r){
+  const s=H0(ms,r);
+  try{
+    const parts=s.split('<h3 class="sec'),head=parts.shift(),blk={},re=/^ (?:old)?">Historial (EF27|EF26) \(/;
+    parts.forEach(p=>{const m=p.match(re);if(m)blk[m[1]==='EF27'?'new':'old']=p});
+    if(!Object.keys(blk).length||Object.keys(blk).length!==parts.length)return s;
+    return head+hc().order.filter(k=>blk[k]).map(k=>'<h3 class="sec'+blk[k].replace(re,()=>(blk[k].startsWith(' old')?' old':' ')+'">Historial '+esc(nm(k))+' (')).join('');
+  }catch(e){return s}
+};
+const M0=window.matchForm;
+window.matchForm=function(id){
+  M0(id);
+  try{const s=$('#f4'),a=s.querySelector('option[value="0"]'),b=s.querySelector('option[value="1"]');
+    a.textContent=nm('new');b.textContent=nm('old');if(hc().order[0]==='old')s.insertBefore(b,a);
+    /* partido nuevo: queda elegido por defecto el historial de más a la izquierda (el más nuevo); al editar se respeta el que ya tenía */
+    if(!id)s.value=hc().order[0]==='old'?'1':'0'}catch(e){}
+};
+
+window.histEditor=function(){
+  const o=hc().order;
+  modal(`<h2>Ordenar y renombrar historiales</h2>
+<small style="display:block;margin-bottom:8px">Usá ◀ ▶ para cambiar la posición. Solo cambia el orden visual y el nombre: los partidos no se tocan.</small>
+${o.map((k,i)=>`<div class="sc"><button class="btn alt" ${i?'':'disabled style="opacity:.4"'} onclick="histMove('${k}',-1)">◀</button>
+<label><input maxlength="20" style="font-size:18px" value="${esc(nm(k))}" oninput="histName('${k}',this.value)"></label>
+<button class="btn alt" ${i<o.length-1?'':'disabled style="opacity:.4"'} onclick="histMove('${k}',1)">▶</button></div>`).join('')}
+<div class="row" style="margin-top:12px"><button class="btn" onclick="closeM()">Listo</button></div>`);
+  document.activeElement&&document.activeElement.blur&&document.activeElement.blur();
+};
+window.histName=function(k,v){hc().names[k]=v;save();applyHist();render()};
+window.histMove=function(k,d){
+  const o=hc().order,i=o.indexOf(k),j=i+d;
+  if(i<0||j<0||j>=o.length)return;
+  [o[i],o[j]]=[o[j],o[i]];save();applyHist();render();histEditor();
+};
+
+const R1=window.render;
+window.render=function(){
+  try{applyHist()}catch(e){console.error('Historiales:',e)}
+  R1();
+  try{if(view.r){const t=$('#app').querySelectorAll('.tabs')[1];
+    if(t)t.insertAdjacentHTML('afterend','<div class="row" style="justify-content:flex-end;margin-top:-4px"><button class="btn alt" style="padding:6px 10px;font-size:13px" onclick="histEditor()">↔ Ordenar y renombrar historiales</button></div>')}}
+  catch(e){console.error('Historiales:',e)}
+};
+window.render();
+})();
+</script>
+
+<style>
+/* ===== IDENTIDAD VISUAL: solo colores y acentos (no cambia datos ni cálculos) ===== */
+:root{--v:#22c55e;--d:#ef4444;--e:#eab308;--h1:#38bdf8;--h2:#a78bfa;--gf:#22d3ee;--go:#fb923c}
+.ch{display:inline-block;min-width:20px;padding:2px 0;margin-right:3px;border-radius:6px;text-align:center;font-size:12px;font-weight:700;line-height:1.2}
+.ch.W{background:var(--v);color:#04210f}.ch.L{background:var(--d);color:#fff}.ch.D{background:var(--e);color:#1a1400}
+.m.rw{box-shadow:inset 3px 0 0 var(--v);background:linear-gradient(90deg,#22c55e14,transparent 45%);padding-left:10px}
+.m.rl{box-shadow:inset 3px 0 0 var(--d);background:linear-gradient(90deg,#ef444414,transparent 45%);padding-left:10px}
+.m.rd{box-shadow:inset 3px 0 0 var(--e);background:linear-gradient(90deg,#eab30812,transparent 45%);padding-left:10px}
+.m.hn>div:first-child small::before{content:"● ";color:var(--h1)}.m.ho>div:first-child small::before{content:"● ";color:var(--h2)}
+.tabs button.hn{box-shadow:inset 0 -3px 0 var(--h1)}.tabs button.ho{box-shadow:inset 0 -3px 0 var(--h2)}
+.sec.hn{color:var(--h1);border-left:3px solid var(--h1);padding-left:8px}
+.sec.ho{color:var(--h2);border-left:3px solid var(--h2);padding-left:8px}
+.gf{color:var(--gf)}.gc{color:var(--go)}
+.card>h2::before{content:"";display:inline-block;width:4px;height:14px;border-radius:2px;background:var(--ac,var(--acc));margin-right:8px;vertical-align:-1px}
+.card.k-bk{--ac:#60a5fa}.card.k-lg{--ac:#94a3b8}.card.k-es{--ac:#2dd4bf}.card.dt{--ac:#f472b6}
+.card.tap.sg{box-shadow:inset 4px 0 0 var(--v)}.card.tap.sr{box-shadow:inset 4px 0 0 var(--d)}.card.tap.sy{box-shadow:inset 4px 0 0 var(--e)}
+.dg0{--dc:#5eead4}.dg1{--dc:#f472b6}.dg2{--dc:#fdba74}
+.dg .sec{color:var(--dc);border-left:3px solid var(--dc);padding-left:8px}.dg .m b{color:var(--dc)}
+.dt .st{background:linear-gradient(135deg,#f472b61f,#5eead41f);box-shadow:inset 4px 0 0 #f472b6}
+.m.wy{box-shadow:inset 3px 0 0 var(--e);background:#eab30812;padding-left:10px}
+.m.wr{box-shadow:inset 3px 0 0 var(--d);background:#ef444414;padding-left:10px}
+.tg{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.4px;padding:1px 6px;border-radius:6px;margin-right:6px;vertical-align:1px}
+.tg.ty{background:#eab30826;color:var(--e)}.tg.tr{background:#ef444426;color:var(--d)}
+.tg.tga{background:#2dd4bf26;color:#2dd4bf}.tg.tge{background:#60a5fa26;color:#60a5fa}.tg.tgx{background:#fb923c26;color:var(--go)}
+.k-ver .fh{box-shadow:inset 4px 0 0 var(--e)}
+.k-hist .fh{box-shadow:inset 4px 0 0 var(--h1),inset 8px 0 0 var(--h2)}
+</style>
+<script>
+/* ===== IDENTIDAD VISUAL: solo agrega clases/colores al dibujar; no toca db ni los datos ===== */
+(function(){
+function paintUI(){
+  const A=document.getElementById('app'),L={W:'w',L:'l',D:'d'},V={W:'V',L:'D',D:'E'};
+  A.querySelectorAll('.m').forEach(m=>{
+    if(!m.querySelector('button[onclick^="swapMatch"]'))return;
+    const b=m.querySelector('b'),c=b&&(b.classList.contains('g')?'W':b.classList.contains('r')?'L':'D');
+    if(c){m.classList.add('r'+L[c]);m.firstElementChild.insertAdjacentHTML('afterbegin',`<span class="ch ${c}">${V[c]}</span>`)}
+    m.classList.add(m.classList.contains('old')?'ho':'hn');
+  });
+  A.querySelectorAll('.tabs button').forEach(b=>{const o=b.getAttribute('onclick')||'';
+    if(o.indexOf("setTab('new')")>=0)b.classList.add('hn');else if(o.indexOf("setTab('old')")>=0)b.classList.add('ho')});
+  A.querySelectorAll('h3.sec').forEach(h=>{if(/^Historial /.test(h.textContent))h.classList.add(h.classList.contains('old')?'ho':'hn')});
+  A.querySelectorAll('section.card>h2').forEach(h=>{const t=h.textContent;
+    const k=t==='Respaldo y exportación'?'k-bk':t==='Historial de modificaciones'?'k-lg':/^Estad/.test(t)?'k-es':'';if(k)h.parentNode.classList.add(k)});
+  A.querySelectorAll('.card.tap').forEach(c=>{
+    const b=c.querySelector('.row b:last-child'),s=c.querySelector('small');
+    if(b)c.classList.add(b.classList.contains('g')?'sg':b.classList.contains('r')?'sr':'sy');
+    const m=s&&s.textContent.trim().match(/^(\d+) PJ · (\d+)G (\d+)E (\d+)P · GF (\d+) GC (\d+)$/);
+    if(m)s.innerHTML=`${m[1]} PJ · <span class="g">${m[2]}G</span> <span class="y">${m[3]}E</span> <span class="r">${m[4]}P</span> · <span class="gf">GF ${m[5]}</span> <span class="gc">GC ${m[6]}</span>`;
+  });
+}
+window.paintUI=paintUI;
+const R3=window.render;
+window.render=function(){R3();try{paintUI()}catch(e){console.error('Visual:',e)}};
+window.render();
+})();
+</script>
+
+<style>
+/* ===== ESTADÍSTICAS DE PARTIDO v1 (solo estilos nuevos) ===== */
+.xs{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:8px;align-items:center;margin-bottom:6px}
+.xs input{margin:0;text-align:center;font-size:18px;padding:10px 4px}
+.xs span{text-align:center;font-size:13px;color:#8b95a9;line-height:1.2}
+.xs.xh b{text-align:center;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xr{display:grid;grid-template-columns:48px 1fr 48px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.xv{font-size:17px;text-align:center;color:#8b95a9}
+.xv.xw{color:#fff;font-weight:700}
+.xl{text-align:center;font-size:13px;color:#8b95a9}
+.xb{display:flex;justify-content:space-between;height:6px;border-radius:3px;overflow:hidden;background:var(--line);margin-top:4px}
+.xb i{display:block;height:100%}
+.xbtn{opacity:.4}
+.xbtn.on{opacity:1;background:#22d3ee22;border-radius:8px}
+</style>
+<script>
+/* ===== ESTADÍSTICAS DE PARTIDO v1: carga manual por partido. Se guardan aparte en db.mstats; no modifican rivals ni matches. ===== */
+(function(){
+const FIELDS=[['pos','Posesión del balón'],['shots','Disparos'],['sot','Disparos al arco'],['fouls','Faltas'],['offs','Fueras de juego'],['corn','Tiros de esquina'],['fk','Tiros libres'],['pass','Pases'],['passok','Pases completados'],['cross','Centros'],['icpt','Pases interceptados'],['tack','Entradas'],['saves','Paradas']];
+window.MSTAT_FIELDS=FIELDS;
+const KD='iator_mstats_del';
+const MS=()=>db.mstats&&typeof db.mstats==='object'&&!Array.isArray(db.mstats)?db.mstats:(db.mstats={});
+const mx=k=>k==='pos'?100:999;
+const q=()=>{try{return JSON.parse(localStorage.getItem(KD)||'[]')}catch(e){return[]}};
+
+/* Alta / baja de estadísticas (la baja se avisa a la nube desde el módulo aparte) */
+window.mstatsPut=function(id,rec){
+  MS()[id]=rec;
+  try{localStorage.setItem(KD,JSON.stringify(q().filter(x=>x!==id)))}catch(e){}
+  save();window.mstatsSync&&window.mstatsSync();
+};
+window.mstatsDel=function(id){
+  const m=MS();if(!(id in m))return;
+  delete m[id];
+  try{const l=q();if(!l.includes(id))l.push(id);localStorage.setItem(KD,JSON.stringify(l))}catch(e){}
+  save();window.mstatsFlush&&window.mstatsFlush();
+};
+
+/* a = lado de "my" del partido, b = lado de "opp" (igual que los goles); "Soy X" solo cambia cómo se muestra */
+const side=(o,s,f)=>{if(!o)return null;const v=o[(s==='l')!==f?'a':'b'];return v==null?null:v};
+const hasAny=rec=>!!rec&&FIELDS.some(([k])=>rec[k]);
+
+window.statsForm=function(id){
+  const m=db.matches.find(x=>x.id===id),r=m&&rv(m.rid);if(!m||!r)return;
+  const rec=MS()[id]||{},f=!!r.flip,p=PM(m,r);
+  const inp=(k,s)=>{const v=side(rec[k],s,f);return `<input data-k="${k}" data-s="${s}" type="number" inputmode="numeric" min="0" max="${mx(k)}" value="${v==null?'':v}">`};
+  modal(`<h2>Estadísticas del partido</h2>
+<small style="display:block;margin-bottom:10px">${esc(meN(r))} ${p.my} - ${p.opp} ${esc(opN(r))} · ${fdate(m.date)}<br>Dejá vacío lo que no tengas. Solo números.</small>
+<div class="xs xh"><b class="gf">${esc(meN(r))}</b><span></span><b class="gc">${esc(opN(r))}</b></div>
+${FIELDS.map(([k,l])=>`<div class="xs">${inp(k,'l')}<span>${l}</span>${inp(k,'r')}</div>`).join('')}
+<div class="row" style="margin-top:14px"><button class="btn alt" onclick="closeM()">Cancelar</button><button class="btn" onclick="saveStats('${id}')">Guardar</button></div>`);
+  document.activeElement&&document.activeElement.blur&&document.activeElement.blur();
+  /* comodidad: si cargás la posesión de un lado y el otro está vacío, propone 100 - valor */
+  document.querySelectorAll('#m [data-k="pos"]').forEach(e=>e.addEventListener('change',()=>{
+    const o=document.querySelector('#m [data-k="pos"][data-s="'+(e.dataset.s==='l'?'r':'l')+'"]'),v=Number(e.value);
+    if(o&&o.value===''&&e.value!==''&&v>=0&&v<=100)o.value=100-v;
+  }));
+};
+
+window.saveStats=function(id){
+  const m=db.matches.find(x=>x.id===id),r=m&&rv(m.rid);if(!m||!r)return;
+  const f=!!r.flip,rec={};let bad=false;
+  const num=(el,max)=>{const v=el.value.trim();if(v==='')return null;const n=Number(v);return Number.isInteger(n)&&n>=0&&n<=max?n:NaN};
+  FIELDS.forEach(([k])=>{
+    const x=num(document.querySelector('#m [data-k="'+k+'"][data-s="l"]'),mx(k)),y=num(document.querySelector('#m [data-k="'+k+'"][data-s="r"]'),mx(k));
+    if(Number.isNaN(x)||Number.isNaN(y)){bad=true;return}
+    if(x===null&&y===null)return;
+    const o={};if(x!==null)o[f?'b':'a']=x;if(y!==null)o[f?'a':'b']=y;rec[k]=o;
+  });
+  if(bad){alert('Revisá los valores: solo números enteros (la posesión va de 0 a 100).');return}
+  if(!hasAny(rec)){
+    if(hasAny(MS()[id])){if(confirm('Dejaste todo vacío. ¿Borrar las estadísticas de este partido?')){mstatsDel(id);closeM();render()}return}
+    alert('No cargaste ningún valor.');return;
+  }
+  const W=[],g=(k,s)=>rec[k]&&rec[k][s];
+  if(rec.pos&&rec.pos.a!=null&&rec.pos.b!=null&&rec.pos.a+rec.pos.b!==100)W.push('La posesión de los dos lados no suma 100 %.');
+  ['a','b'].forEach(s=>{
+    if(g('shots',s)!=null&&g('sot',s)!=null&&g('sot',s)>g('shots',s))W.push('Disparos al arco es mayor que Disparos.');
+    if(g('pass',s)!=null&&g('passok',s)!=null&&g('passok',s)>g('pass',s))W.push('Pases completados es mayor que Pases.');
+  });
+  if(W.length&&!confirm('Hay valores raros:\n• '+[...new Set(W)].join('\n• ')+'\n\n¿Guardar igual?'))return;
+  rec.ts=Date.now();
+  mstatsPut(id,rec);closeM();render();statsView(id);
+};
+
+window.statsView=function(id){
+  const m=db.matches.find(x=>x.id===id),r=m&&rv(m.rid);if(!m||!r)return;
+  const rec=MS()[id];if(!hasAny(rec)){statsForm(id);return}
+  const f=!!r.flip,p=PM(m,r);
+  const rows=FIELDS.filter(([k])=>rec[k]).map(([k,l])=>{
+    const x=side(rec[k],'l',f),y=side(rec[k],'r',f),t=(x||0)+(y||0),both=x!=null&&y!=null&&t>0;
+    const px=both?x*100/t:0,py=both?y*100/t:0,u=k==='pos'?'%':'';
+    return `<div class="xr"><div class="xv${x!=null&&(y==null||x>y)?' xw':''}">${x==null?'–':x+u}</div><div class="xl">${l}<div class="xb"><i style="width:${px}%;background:var(--gf)"></i><i style="width:${py}%;background:var(--go)"></i></div></div><div class="xv${y!=null&&(x==null||y>x)?' xw':''}">${y==null?'–':y+u}</div></div>`;
+  }).join('');
+  modal(`<h2>Estadísticas del partido</h2>
+<small style="display:block;margin-bottom:6px"><b class="gf">${esc(meN(r))}</b> ${p.my} - ${p.opp} <b class="gc">${esc(opN(r))}</b> · ${fdate(m.date)}</small>
+${rows}
+<div class="row" style="margin-top:14px"><button class="btn alt" onclick="closeM()">Cerrar</button><button class="btn" onclick="statsForm('${id}')">✏️ Editar</button></div>
+<div class="row"><button class="btn alt" style="width:100%" onclick="statsBorrar('${id}')">🗑 Borrar estadísticas</button></div>`);
+  document.activeElement&&document.activeElement.blur&&document.activeElement.blur();
+};
+window.statsBorrar=function(id){
+  if(!confirm('¿Borrar las estadísticas de este partido? El partido no se toca.'))return;
+  mstatsDel(id);closeM();render();
+};
+
+/* Si se intercambian los goles (⇄), se intercambian también los lados de las estadísticas */
+const S0=window.swapMatch;
+window.swapMatch=function(id){
+  const m=db.matches.find(x=>x.id===id),rec=m&&MS()[id];
+  const res=S0.apply(this,arguments);
+  try{
+    if(hasAny(rec)){
+      const n={ts:Date.now()};
+      FIELDS.forEach(([k])=>{const o=rec[k];if(o){const z={};if(o.a!=null)z.b=o.a;if(o.b!=null)z.a=o.b;n[k]=z}});
+      mstatsPut(id,n);
+    }
+  }catch(e){console.error('Estadísticas:',e)}
+  return res;
+};
+/* Si se borra un partido o un rival, se borran sus estadísticas */
+const D0=window.delMatch;
+window.delMatch=function(id){
+  const res=D0.apply(this,arguments);
+  try{if(MS()[id]&&!db.matches.some(x=>x.id===id))mstatsDel(id)}catch(e){console.error('Estadísticas:',e)}
+  return res;
+};
+const X0=window.delRival;
+window.delRival=function(id){
+  const ids=db.matches.filter(m=>m.rid===id).map(m=>m.id);
+  const res=X0.apply(this,arguments);
+  try{if(!rv(id))ids.forEach(i=>{if(MS()[i])mstatsDel(i)})}catch(e){console.error('Estadísticas:',e)}
+  return res;
+};
+
+/* Botón 📊 en cada partido del historial */
+function inject(){
+  const ms=MS();
+  document.getElementById('app').querySelectorAll('.m').forEach(row=>{
+    const sw=row.querySelector('button[onclick^="swapMatch"]');
+    if(!sw||row.querySelector('.xbtn'))return;
+    const id=((sw.getAttribute('onclick')||'').match(/'([^']+)'/)||[])[1];if(!id)return;
+    const b=document.createElement('button');
+    b.className='ic xbtn'+(hasAny(ms[id])?' on':'');b.textContent='📊';
+    b.title=hasAny(ms[id])?'Ver estadísticas':'Cargar estadísticas';
+    b.setAttribute('onclick',"statsView('"+id+"')");
+    sw.parentNode.insertBefore(b,sw);
+  });
+}
+window.statsInject=inject;
+const R5=window.render;
+window.render=function(){R5();try{inject()}catch(e){console.error('Estadísticas:',e)}};
+window.render();
+})();
+</script>
+
+<style>
+/* ===== OCR DE CAPTURA v3 (solo estilos nuevos) ===== */
+.ocr-box{border:1px dashed var(--line);border-radius:12px;padding:10px;margin-bottom:12px}
+.ocr-box select{font-size:15px;padding:8px;margin:6px 0 8px}
+.ocr-box .btn{width:100%}
+.ocr-msg{font-size:13px;color:#8b95a9;margin-top:8px;line-height:1.35}
+.xs input.ocr-dud{outline:2px solid #eab308;background:#eab30822}
+</style>
+<script>
+/* ===== OCR DE CAPTURA v3: lee una captura en el navegador (Tesseract.js) y SOLO rellena el formulario de estadísticas.
+   No guarda nada solo: vos revisás y tocás "Guardar" (que usa el guardado y las validaciones que ya existen).
+   La imagen no se sube ni se guarda: se procesa en memoria y se descarta. No toca rivals, matches ni Firebase.
+   Método principal: la pantalla de eFootball tiene la tabla siempre en el mismo lugar con 13 filas iguales,
+   así que se recorta cada número (izquierda/derecha de cada fila) y se lee por separado.
+   Si la captura tiene otra proporción, se usa un método alternativo que lee todo el texto y busca las etiquetas. ===== */
+(function(){
+/* posición de la tabla como fracción de la imagen (medida sobre capturas reales 20:9) */
+const LAYOUT={tx0:.34,tx1:.66,ty0:.2745,ty1:.852,cell:.27,score:[[.449,.480],[.520,.551]],sy:[.155,.222],ar:[2.05,2.45]};
+
+const norm=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z]/g,'');
+function lev(a,b){
+  const m=a.length,n=b.length;if(!m)return n;if(!n)return m;
+  let p=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}
+  return p[n];
+}
+/* texto leído -> número entero (0-999) o null */
+function clean(s){
+  s=String(s||'').replace(/%/g,'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/B/g,'8').replace(/\D/g,'');
+  return s&&s.length<=3?Number(s):null;
+}
+/* varias lecturas -> {v, n}: valor más repetido y cuántas lecturas lo respaldan */
+function vote(arr){
+  const c={};arr.filter(x=>x!=null).forEach(x=>c[x]=(c[x]||0)+1);
+  let best=null,n=0,tie=false;
+  Object.keys(c).forEach(k=>{if(c[k]>n){n=c[k];best=Number(k);tie=false}else if(c[k]===n)tie=true});
+  return{v:best,n,tie};
+}
+
+/* ---------- método alternativo (captura con otra proporción): leer todo y buscar etiquetas ---------- */
+const ALIAS={pos:['posesion'],shots:['tiros'],sot:['tirosalarco','disparosaporteria'],corn:['saquesdeesquina','corners'],fk:['tiroslibres'],saves:['atajadas']};
+function cands(){
+  const out=[];
+  (window.MSTAT_FIELDS||[]).forEach(([k,l])=>{out.push([k,norm(l)]);(ALIAS[k]||[]).forEach(a=>out.push([k,a]))});
+  return out;
+}
+function matchLabel(text){
+  const n=norm(text);if(n.length<4)return null;
+  let best=null;
+  cands().forEach(([k,c])=>{const r=lev(n,c)/Math.max(n.length,c.length);if(!best||r<best.ratio)best={k,ratio:r}});
+  return best&&best.ratio<=0.34?best:null;
+}
+const isNum=t=>/^[\dOoIl|]{1,3}%?$/.test(t)&&/\d/.test(t);
+function parse(words){
+  const ws=words.filter(w=>w.text&&w.text.trim()).map(w=>({...w,text:w.text.trim(),cy:(w.y0+w.y1)/2,h:w.y1-w.y0}));
+  if(!ws.length)return{rows:{},score:null};
+  const hs=ws.map(w=>w.h).sort((a,b)=>a-b),mh=hs[Math.floor(hs.length/2)]||10;
+  ws.sort((a,b)=>a.cy-b.cy);
+  const lines=[];
+  ws.forEach(w=>{const L=lines[lines.length-1];if(L&&Math.abs(w.cy-L.cy)<=mh*0.6){L.w.push(w);L.cy=L.w.reduce((s,x)=>s+x.cy,0)/L.w.length}else lines.push({cy:w.cy,w:[w]})});
+  const rows={};let score=null;
+  lines.forEach(L=>{
+    L.w.sort((a,b)=>a.x0-b.x0);
+    const nums=L.w.filter(w=>isNum(w.text)),txt=L.w.filter(w=>!isNum(w.text)&&norm(w.text).length>0);
+    const lab=txt.length?matchLabel(txt.map(w=>w.text).join(' ')):null;
+    if(!lab){
+      if(!score&&!txt.length){const mm=L.w.map(w=>w.text).join(' ').match(/(\d{1,2})\s*[-–—:]\s*(\d{1,2})/);if(mm)score={l:Number(mm[1]),r:Number(mm[2])}}
+      return;
+    }
+    const lx0=Math.min(...txt.map(w=>w.x0)),lx1=Math.max(...txt.map(w=>w.x1));
+    const left=nums.filter(w=>(w.x0+w.x1)/2<lx0).pop(),right=nums.find(w=>(w.x0+w.x1)/2>lx1);
+    const row={a:left?clean(left.text):null,b:right?clean(right.text):null};
+    const lowc=[left,right].some(w=>w&&w.conf!=null&&w.conf<60);
+    row.dud=lab.ratio>0.18||row.a==null||row.b==null||lowc;
+    row.ratio=lab.ratio;
+    if(!rows[lab.k]||lab.ratio<rows[lab.k].ratio)rows[lab.k]=row;
+  });
+  return{rows,score};
+}
+window.OCRX={parse,lev,norm,matchLabel,clean,vote,LAYOUT};
+
+/* ---------- imagen -> blanco y negro (texto oscuro sobre fondo claro), con margen blanco ---------- */
+function binarize(c,pad){
+  const x=c.getContext('2d',{willReadFrequently:true});
+  const im=x.getImageData(0,0,c.width,c.height),d=im.data,N=c.width*c.height,g=new Uint8Array(N),hist=new Array(256).fill(0);
+  let sum=0;
+  for(let i=0;i<N;i++){const v=(d[i*4]*299+d[i*4+1]*587+d[i*4+2]*114)/1000|0;g[i]=v;hist[v]++;sum+=v}
+  let sB=0,wB=0,mx=0,thr=128;
+  for(let t=0;t<256;t++){wB+=hist[t];if(!wB)continue;const wF=N-wB;if(!wF)break;sB+=t*hist[t];const mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)*(mB-mF);if(v>mx){mx=v;thr=t}}
+  const darkBg=sum/N<128;
+  for(let i=0;i<N;i++){const bright=g[i]>thr,o=(bright===darkBg)?0:255;d[i*4]=d[i*4+1]=d[i*4+2]=o;d[i*4+3]=255}
+  x.putImageData(im,0,0);
+  const out=document.createElement('canvas');out.width=c.width+pad*2;out.height=c.height+pad*2;
+  const ox=out.getContext('2d');ox.fillStyle='#fff';ox.fillRect(0,0,out.width,out.height);ox.drawImage(c,pad,pad);
+  c.width=c.height=0;
+  return out;
+}
+async function loadBitmap(file){
+  try{return await createImageBitmap(file)}catch(e){
+    return await new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=no;i.src=u});
+  }
+}
+/* recorte (fracciones de la imagen) escalado a alto fijo; soft = pasa por una versión más chica (otra "vista" del mismo número) */
+function cellCanvas(bmp,fx0,fx1,fy0,fy1,soft){
+  const W=bmp.width,H=bmp.height,sx=fx0*W,sy=fy0*H,sw=(fx1-fx0)*W,sh=(fy1-fy0)*H;
+  const th=90,tw=Math.max(8,Math.round(sw*th/sh));
+  const c=document.createElement('canvas');c.width=tw;c.height=th;
+  const cx=c.getContext('2d',{willReadFrequently:true});
+  if(soft){
+    const h2=60,w2=Math.max(4,Math.round(sw*h2/sh)),s=document.createElement('canvas');s.width=w2;s.height=h2;
+    s.getContext('2d').drawImage(bmp,sx,sy,sw,sh,0,0,w2,h2);
+    cx.drawImage(s,0,0,w2,h2,0,0,tw,th);s.width=s.height=0;
+  }else cx.drawImage(bmp,sx,sy,sw,sh,0,0,tw,th);
+  return binarize(c,12);
+}
+function loadTess(){
+  if(window.Tesseract)return Promise.resolve();
+  return new Promise((ok,no)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    s.onload=ok;s.onerror=()=>no(new Error('No se pudo cargar el lector (¿sin conexión?)'));
+    document.head.appendChild(s);
+  });
+}
+
+/* ---------- método principal: celda por celda ---------- */
+async function readByLayout(bmp,onProg){
+  const L=LAYOUT,keys=(window.MSTAT_FIELDS||[]).map(f=>f[0]);
+  const worker=await Tesseract.createWorker('eng');
+  try{
+    const reads=async(box,psm,softs)=>{
+      await worker.setParameters({tessedit_pageseg_mode:psm});
+      const out=[];
+      for(const soft of softs){
+        const cv=cellCanvas(bmp,box[0],box[1],box[2],box[3],soft);
+        const {data}=await worker.recognize(cv);cv.width=cv.height=0;
+        out.push(clean(data.text));
+      }
+      return out;
+    };
+    /* devuelve {v, dud}: 2 lecturas que coinciden = confiable; si no, se agregan lecturas con otros modos (8 y 13) y se vota.
+       Es dudoso si no hay valor, si lo respaldan menos de 2 lecturas o si hay empate con otro valor. */
+    const readCell=async box=>{
+      let r=await reads(box,'7',[false,true]);
+      if(r[0]!=null&&r[0]===r[1])return{v:r[0],dud:false};
+      r=r.concat(await reads(box,'8',[false,true]));
+      let w=vote(r);
+      if(w.n<2||w.tie){r=r.concat(await reads(box,'13',[false,true]));w=vote(r)}
+      return{v:w.v,dud:w.v==null||w.n<2||w.tie};
+    };
+    const p=(L.ty1-L.ty0)/keys.length,cw=L.cell*(L.tx1-L.tx0);
+    const rows={};let nulls=0;
+    for(let k=0;k<keys.length;k++){
+      if(onProg)onProg(k/(keys.length+1),'fila '+(k+1)+' de '+keys.length);
+      const y0=L.ty0+k*p+0.12*p,y1=L.ty0+k*p+0.84*p;
+      const A=await readCell([L.tx0,L.tx0+cw,y0,y1]),B=await readCell([L.tx1-cw,L.tx1,y0,y1]);
+      let a=A.v,b=B.v,dud=A.dud||B.dud;
+      const mx=keys[k]==='pos'?100:999;
+      if(a!=null&&a>mx){a=null;dud=true}if(b!=null&&b>mx){b=null;dud=true}
+      if(a==null)nulls++;if(b==null)nulls++;
+      rows[keys[k]]={a,b,dud:dud||a==null||b==null};
+    }
+    if(onProg)onProg(keys.length/(keys.length+1),'resultado');
+    const sc=[];
+    for(const sx of L.score){const c=await readCell([sx[0],sx[1],L.sy[0],L.sy[1]]);sc.push(c.v)}
+    const score=sc[0]!=null&&sc[1]!=null?{l:sc[0],r:sc[1]}:null;
+    return{rows,score,ok:nulls<=6};
+  }finally{try{await worker.terminate()}catch(e){}}
+}
+
+/* ---------- método alternativo: toda la imagen ---------- */
+const toWords=data=>(data.words||[]).map(w=>({text:w.text,x0:w.bbox.x0,y0:w.bbox.y0,x1:w.bbox.x1,y1:w.bbox.y1,conf:w.confidence}));
+async function readWhole(bmp,onProg){
+  /* se recorta la zona central, donde está la tabla, para que el fondo no confunda al lector */
+  const W=bmp.width,H=bmp.height,fx0=.25,fx1=.75,fy0=.14,fy1=.9;
+  const sw=(fx1-fx0)*W,sh=(fy1-fy0)*H;let sc=Math.max(1,Math.min(2.5,1600/sw));if(sh*sc>4500)sc=4500/sh;
+  const c=document.createElement('canvas');c.width=Math.round(sw*sc);c.height=Math.round(sh*sc);
+  c.getContext('2d',{willReadFrequently:true}).drawImage(bmp,fx0*W,fy0*H,sw,sh,0,0,c.width,c.height);
+  const cv=binarize(c,10);
+  const worker=await Tesseract.createWorker('spa',1,{logger:m=>{if(m&&m.status==='recognizing text'&&onProg)onProg(m.progress,'')}});
+  try{
+    let best=null;
+    for(const psm of ['6','11']){
+      await worker.setParameters({tessedit_pageseg_mode:psm});
+      const {data}=await worker.recognize(cv);
+      const r=parse(toWords(data));
+      if(!best||Object.keys(r.rows).length>Object.keys(best.rows).length)best=r;
+      if(Object.keys(best.rows).length>=10)break;
+    }
+    return best;
+  }finally{try{await worker.terminate()}catch(e){}cv.width=cv.height=0}
+}
+
+async function readImage(file,onProg){
+  await loadTess();
+  const bmp=await loadBitmap(file);
+  try{
+    const ar=bmp.width/bmp.height,L=LAYOUT;
+    if(ar>=L.ar[0]&&ar<=L.ar[1]){
+      const r=await readByLayout(bmp,onProg);
+      if(r.ok){r.mode='celdas';return r}
+    }
+    const r=await readWhole(bmp,onProg);r.mode='general';return r;
+  }finally{if(bmp.close)bmp.close()}
+}
+
+function addBox(id){
+  const m=db.matches.find(x=>x.id===id),r=m&&rv(m.rid);if(!m||!r)return;
+  const wrap=document.querySelector('#m>div');if(!wrap||wrap.querySelector('.ocr-box'))return;
+  const anchor=wrap.querySelector('small');if(!anchor)return;
+  const box=document.createElement('div');box.className='ocr-box';
+  box.innerHTML=`<button class="btn alt" type="button" data-o="go">📷 Leer captura</button>
+<input type="file" accept="image/*" hidden data-o="file">
+<label style="display:block;margin-top:8px"><small>En la captura, a la izquierda está:</small>
+<select data-o="side"><option value="me">${esc(meN(r))}</option><option value="op">${esc(opN(r))}</option></select></label>
+<div class="ocr-msg" data-o="msg">La imagen se lee en tu celular y se descarta: no se sube ni se guarda. Después revisás todo antes de guardar.</div>`;
+  anchor.insertAdjacentElement('afterend',box);
+  const q=s=>box.querySelector('[data-o="'+s+'"]'),msg=t=>{q('msg').textContent=t};
+  q('go').onclick=()=>q('file').click();
+  q('file').onchange=async ev=>{
+    const f=ev.target.files&&ev.target.files[0];if(!f)return;
+    const btn=q('go');btn.disabled=true;msg('Preparando la imagen…');
+    try{
+      const res=await readImage(f,(p,t)=>msg('Leyendo… '+Math.round(p*100)+' %'+(t?' ('+t+')':'')));
+      const p=PM(m,r);let leftMe=q('side').value==='me',note='';
+      if(res.score){
+        const {l,r:rr}=res.score;
+        if(l!==rr&&l===p.my&&rr===p.opp){leftMe=true;q('side').value='me'}
+        else if(l!==rr&&l===p.opp&&rr===p.my){leftMe=false;q('side').value='op'}
+        else if(l!==p.my&&l!==p.opp||rr!==p.my&&rr!==p.opp)note=' ⚠ El resultado que leí ('+l+'-'+rr+') no coincide con el del partido ('+p.my+'-'+p.opp+'): revisá que sea la captura correcta y el lado.';
+        else note=' Con el resultado no pude saber qué lado es cada uno: revisá el selector.';
+      }else note=' No pude leer el resultado: revisá el selector de lado.';
+      const put=(k,s,v,dud)=>{const el=document.querySelector('#m [data-k="'+k+'"][data-s="'+s+'"]');if(!el)return;
+        if(v!=null)el.value=v;
+        if(dud||v==null){el.classList.add('ocr-dud');el.addEventListener('input',()=>el.classList.remove('ocr-dud'),{once:true})}};
+      let n=0,d=0;
+      Object.keys(res.rows).forEach(k=>{
+        const row=res.rows[k],mx=k==='pos'?100:999;
+        let a=row.a,b=row.b,dud=row.dud;
+        if(a!=null&&a>mx){a=null;dud=true}if(b!=null&&b>mx){b=null;dud=true}
+        const Lf=leftMe?a:b,Rt=leftMe?b:a;
+        put(k,'l',Lf,dud);put(k,'r',Rt,dud);
+        n++;if(dud)d++;
+      });
+      /* mismas reglas lógicas que ya usa el guardado: se marcan en amarillo si no cierran */
+      const v=(k,s)=>{const e=document.querySelector('#m [data-k="'+k+'"][data-s="'+s+'"]');return e&&e.value!==''?Number(e.value):null};
+      const mark=(k,s)=>{const e=document.querySelector('#m [data-k="'+k+'"][data-s="'+s+'"]');if(e)e.classList.add('ocr-dud')};
+      const pl=v('pos','l'),pr=v('pos','r');if(pl!=null&&pr!=null&&pl+pr!==100){mark('pos','l');mark('pos','r');d++}
+      ['l','r'].forEach(s=>{
+        if(v('shots',s)!=null&&v('sot',s)!=null&&v('sot',s)>v('shots',s)){mark('shots',s);mark('sot',s);d++}
+        if(v('pass',s)!=null&&v('passok',s)!=null&&v('passok',s)>v('pass',s)){mark('pass',s);mark('passok',s);d++}
+      });
+      msg(n?'Leí '+n+' de '+(window.MSTAT_FIELDS||[]).length+' estadísticas'+(res.mode==='general'?' (con el método general: esta captura tiene otra proporción, así que revisá bien).':'.')+(d?' Lo que quedó en amarillo es dudoso o está vacío: revisalo contra la captura.':'')+note+' Todavía no se guardó nada: revisá y tocá Guardar.'
+            :'No pude leer estadísticas en esa imagen. Probá con una captura completa de la pantalla o cargá a mano.');
+    }catch(e){
+      console.error('OCR:',e);msg('No se pudo leer la captura: '+(e&&e.message?e.message:'error')+'. Podés cargar a mano.');
+    }finally{
+      btn.disabled=false;ev.target.value='';
+    }
+  };
+}
+
+if(typeof window.statsForm==='function'){
+  const F0=window.statsForm;
+  window.statsForm=function(id){
+    const res=F0.apply(this,arguments);
+    try{addBox(id)}catch(e){console.error('OCR:',e)}
+    return res;
+  };
+}
+})();
+</script>
+
+<script>
+/* ===== IMPORTAR A UN HISTORIAL v1: antes de importar un respaldo (.json) pregunta a qué historial va (EF27 / EF26 o como los hayas renombrado).
+   Envuelve importData desde afuera: el texto de la función original no se toca y sigue disponible con la opción "Reemplazar todo".
+   Los cambios se calculan primero y se aplican juntos al final: si algo falla, no se modifica nada. ===== */
+(function(){
+const key=s=>String(s==null?'':s).trim().toLowerCase();
+const same=(a,b)=>a.rid===b.rid&&a.my===b.my&&a.opp===b.opp&&a.date===b.date&&!!a.old===!!b.old;
+
+/* Calcula el resultado sin tocar db. cur={rivals,matches}; file=el respaldo; target='new'|'old'; mode='rep' (reemplazar ese historial) | 'add' (sumar) */
+function plan(cur,file,target,mode,newId){
+  const isOld=target==='old';
+  const rivals=cur.rivals.slice(),byId=new Map(rivals.map(r=>[r.id,r])),byName=new Map(rivals.map(r=>[key(r.name),r]));
+  const idMap={};let newR=0;
+  (file.rivals||[]).forEach(fr=>{
+    if(!fr||fr.id==null||!String(fr.name||'').trim())return;
+    let t=byId.get(fr.id)||byName.get(key(fr.name));
+    if(!t){
+      t={id:byId.has(fr.id)?newId():fr.id,name:String(fr.name).trim(),ts:Number(fr.ts)||Date.now(),flip:!!fr.flip};
+      rivals.push(t);byId.set(t.id,t);byName.set(key(t.name),t);newR++;
+    }
+    idMap[fr.id]=t.id;
+  });
+  const removed=mode==='rep'?cur.matches.filter(m=>!!m.old===isOld):[];
+  const rem=new Set(removed.map(m=>m.id));
+  const kept=cur.matches.filter(m=>!rem.has(m.id));
+  const used=new Map(kept.map(m=>[m.id,m]));
+  const imported=[],importedIds=new Set(),mstats={};
+  let skipped=0,dup=0;
+  (file.matches||[]).forEach(fm=>{
+    if(!fm){skipped++;return}
+    const my=Number(fm.my),opp=Number(fm.opp),rid=idMap[fm.rid];
+    if(!rid||!Number.isInteger(my)||!Number.isInteger(opp)||my<0||opp<0||my>99||opp>99||!/^\d{4}-\d{2}-\d{2}$/.test(String(fm.date||''))){skipped++;return}
+    const m={id:fm.id,rid,my,opp,date:String(fm.date),old:isOld,ts:Number(fm.ts)||Date.now()};
+    /* mismo id y mismo contenido que uno que ya está: es el mismo partido (se importó dos veces) */
+    if(fm.id!=null&&used.has(fm.id)){
+      if(same(used.get(fm.id),m)){dup++;return}
+      m.id=newId();
+    }else if(fm.id==null)m.id=newId();
+    used.set(m.id,m);imported.push(m);importedIds.add(m.id);
+    if(m.id===fm.id&&file.mstats&&typeof file.mstats==='object'&&file.mstats[fm.id]&&typeof file.mstats[fm.id]==='object')mstats[m.id]=file.mstats[fm.id];
+  });
+  return{rivals,matches:kept.concat(imported),removed:removed.length,removedIds:removed.map(m=>m.id).filter(id=>!importedIds.has(id)),imported:imported.length,skipped,dup,newR,mstats};
+}
+window.IMPX={plan};
+
+const logAdd=(k,txt)=>{try{
+  const L=JSON.parse(localStorage.getItem('iator_log_v1')||'[]');
+  L.push(k==='Alta'?{t:new Date().toISOString(),k,n:txt}:{t:new Date().toISOString(),k,a:txt});
+  localStorage.setItem('iator_log_v1',JSON.stringify(L.slice(-500)));
+}catch(e){}};
+
+function histInfo(){
+  const h=db.hcfg&&typeof db.hcfg==='object'?db.hcfg:{};
+  const order=Array.isArray(h.order)&&h.order.length===2&&h.order.includes('new')&&h.order.includes('old')?h.order:['new','old'];
+  const nm=k=>String((h.names||{})[k]||'').trim()||(k==='new'?'EF27':'EF26');
+  const cnt=k=>db.matches.filter(m=>!!m.old===(k==='old')).length;
+  return{order,nm,cnt};
+}
+
+function ask(inp,d){
+  const H=histInfo();
+  modal(`<h2>¿A qué historial lo ponés?</h2>
+<small style="display:block;margin-bottom:12px">El archivo trae ${d.matches.length} partido(s) de ${d.rivals.length} rival(es).</small>
+${H.order.map(k=>`<button class="btn" style="width:100%;margin-bottom:8px" data-h="${k}">${esc(H.nm(k))} <small>· hoy tiene ${H.cnt(k)}</small></button>`).join('')}
+<label style="display:block;margin:12px 0 10px"><small>Qué hacer con lo que ya hay en ese historial</small>
+<select id="impmode"><option value="rep">Reemplazarlo por el archivo</option><option value="add">Sumar el archivo a lo que hay</option></select></label>
+<div class="row"><button class="btn alt" data-h="all">Reemplazar todo</button><button class="btn alt" data-h="x">Cancelar</button></div>
+<small style="display:block;margin-top:10px">“Reemplazar todo” es la importación de siempre: borra todo lo actual y deja solo lo del archivo.</small>`);
+  document.querySelectorAll('#m [data-h]').forEach(b=>{b.onclick=()=>choose(inp,d,b.dataset.h)});
+}
+
+function choose(inp,d,h){
+  if(h==='x'){closeM();inp.value='';return}
+  if(h==='all'){closeM();O0(inp);return}
+  const mode=document.querySelector('#m #impmode').value,H=histInfo(),name=H.nm(h);
+  let P;
+  try{P=plan({rivals:db.rivals,matches:db.matches},d,h,mode,uid)}catch(e){console.error('Importar:',e);alert('No se pudo leer el archivo. No se cambió nada.');return}
+  if(!P.imported){alert('No hay partidos para importar'+(P.dup?' (todos ya estaban cargados)':'')+(P.skipped?' ('+P.skipped+' sin rival o con datos inválidos)':'')+'. No se cambió nada.');return}
+  const msg=mode==='rep'
+    ?'Vas a reemplazar los '+P.removed+' partido(s) de '+name+' por los '+P.imported+' del archivo.\nEl otro historial no se toca.\n\n¿Continuar?'
+    :'Vas a sumar '+P.imported+' partido(s) a '+name+' (hoy tiene '+H.cnt(h)+').'+(P.dup?'\n'+P.dup+' ya estaban cargados y se omiten.':'')+'\n\n¿Continuar?';
+  if(!confirm(msg))return;
+  try{
+    db.rivals=P.rivals;db.matches=P.matches;
+    if(P.removedIds.length&&db.mstats&&window.mstatsDel)P.removedIds.forEach(id=>{if(id in db.mstats)window.mstatsDel(id)});
+    if(Object.keys(P.mstats).length){db.mstats=db.mstats&&typeof db.mstats==='object'?db.mstats:{};Object.assign(db.mstats,P.mstats)}
+    save();window.mstatsSync&&window.mstatsSync();
+    if(P.removed)logAdd('Eliminación','Importación a '+name+': se reemplazaron '+P.removed+' partido(s)');
+    logAdd('Alta','Importación a '+name+': '+P.imported+' partido(s) desde un respaldo');
+    closeM();inp.value='';render();
+    alert('Listo: '+P.imported+' partido(s) cargados en '+name+'.'+(P.removed?'\nSe reemplazaron '+P.removed+'.':'')+(P.newR?'\nRivales nuevos: '+P.newR+'.':'')+(P.dup?'\nYa estaban cargados: '+P.dup+'.':'')+(P.skipped?'\nOmitidos (sin rival o datos inválidos): '+P.skipped+'.':''));
+  }catch(e){console.error('Importar:',e);alert('Algo falló al aplicar el cambio. Revisá tus datos y, si hace falta, importá con "Reemplazar todo".')}
+}
+
+const O0=window.importData;
+window.importData=function(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let d;
+    try{d=JSON.parse(rd.result);if(!Array.isArray(d.rivals)||!Array.isArray(d.matches))throw 0}catch(e){alert('Archivo no válido');inp.value='';return}
+    try{ask(inp,d)}catch(e){console.error('Importar:',e);alert('No se pudo abrir el selector de historial: se usa la importación de siempre.');O0(inp)}
+  };
+  rd.readAsText(f);
+};
+})();
+</script>
+<style>
+/* ===== EVOLUCIÓN v1 (solo estilos nuevos) ===== */
+.k-ev .fh{box-shadow:inset 4px 0 0 var(--gf)}
+.ev h3{font-size:14px;margin:14px 0 6px}.ev h3:first-of-type{margin-top:4px}
+.ev svg{display:block;width:100%;height:auto;touch-action:pan-y;-webkit-user-select:none;user-select:none}
+.ev .evb{overflow-x:auto;-webkit-overflow-scrolling:touch}.ev .evb svg{width:auto;min-width:100%;touch-action:auto}
+.ev .evi{font-size:13px;min-height:34px;margin-top:6px;line-height:1.35}
+.ev .evl{font-size:12px;margin-bottom:4px}.ev .evl i{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 4px 0 10px;vertical-align:-1px}.ev .evl i:first-child{margin-left:0}
+.ev .tabs{margin-bottom:8px}
+</style>
+<script>
+/* ===== EVOLUCIÓN v1: sección plegable con (1) balance acumulado partido a partido y (2) goles a favor y en contra por mes.
+   Solo LEE los partidos que ya hay (no modifica nada) y respeta "Soy X". En cada rival sigue la pestaña elegida (Todos / EF27 / EF26);
+   en la pantalla principal tiene su propio filtro. Gráficos dibujados con SVG propio, sin librerías externas. ===== */
+(function(){
+const V='#22c55e',D='#ef4444',E='#eab308',GF='#22d3ee',GO='#fb923c',MU='#8b95a9';
+const MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const KU='iator_ev_ui';
+const ld=()=>{try{return JSON.parse(localStorage.getItem(KU))||{}}catch(e){return{}}};
+let st=ld(),homeF='all';
+
+/* ---------- cálculo (puro) ---------- */
+function series(ms){
+  const a=ms.filter(m=>m&&m.date).slice().sort((x,y)=>String(x.date).localeCompare(String(y.date))||(x.ts||0)-(y.ts||0));
+  let b=0;
+  return a.map((m,i)=>{const r=Math.sign(m.my-m.opp);b+=r;return{i,b,r,m}});
+}
+function monthly(ms){
+  const g={};
+  ms.forEach(m=>{if(!m||!m.date)return;const k=String(m.date).slice(0,7),o=g[k]||(g[k]={k,gf:0,gc:0,n:0});o.gf+=m.my;o.gc+=m.opp;o.n++});
+  return Object.values(g).sort((x,y)=>x.k.localeCompare(y.k));
+}
+
+/* ---------- dibujo (devuelve texto SVG) ---------- */
+const W=320,H=190,PL=30,PR=10,PT=12,PB=22;
+function lineGeom(S){
+  const n=S.length,vals=S.map(p=>p.b);
+  let mn=Math.min(0,...vals),mx=Math.max(0,...vals);if(mn===mx)mx=mn+1;
+  const x=i=>n>1?PL+i*(W-PL-PR)/(n-1):(PL+W-PR)/2,y=v=>PT+(mx-v)*(H-PT-PB)/(mx-mn);
+  return{n,mn,mx,x,y,y0:y(0)};
+}
+function lineSVG(S,dateTxt){
+  const g=lineGeom(S),pts=S.map(p=>[g.x(p.i),g.y(p.b)]);
+  const off=Math.min(1,Math.max(0,(g.y0-PT)/(H-PT-PB)));
+  const path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const area=path+' L'+pts[pts.length-1][0].toFixed(1)+' '+g.y0.toFixed(1)+' L'+pts[0][0].toFixed(1)+' '+g.y0.toFixed(1)+' Z';
+  const dots=g.n<=80?S.map((p,i)=>`<circle cx="${pts[i][0].toFixed(1)}" cy="${pts[i][1].toFixed(1)}" r="2.6" fill="${p.r>0?V:p.r<0?D:E}"/>`).join(''):'';
+  const showZero=g.mn===0?true:g.mx===0?false:(Math.abs(g.y0-g.y(g.mx))>=11&&Math.abs(g.y0-g.y(g.mn))>=11);
+  const lab=(v,yy)=>`<text x="${PL-4}" y="${(yy+3).toFixed(1)}" font-size="9" fill="${MU}" text-anchor="end">${v>0?'+':''}${v}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Balance acumulado">
+<defs><linearGradient id="evg" gradientUnits="userSpaceOnUse" x1="0" y1="${PT}" x2="0" y2="${H-PB}">
+<stop offset="0" stop-color="${V}"/><stop offset="${off.toFixed(4)}" stop-color="${V}"/><stop offset="${off.toFixed(4)}" stop-color="${D}"/><stop offset="1" stop-color="${D}"/></linearGradient></defs>
+<line x1="${PL}" x2="${W-PR}" y1="${g.y0.toFixed(1)}" y2="${g.y0.toFixed(1)}" stroke="${MU}" stroke-opacity=".6" stroke-dasharray="3 3"/>
+${lab(g.mx,g.y(g.mx))}${g.mn<0?lab(g.mn,g.y(g.mn)):''}${showZero?lab(0,g.y0):''}
+<path d="${area}" fill="url(#evg)" fill-opacity=".16"/>
+<path d="${path}" fill="none" stroke="url(#evg)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+${dots}
+<g id="evm" style="display:none"><line y1="${PT}" y2="${H-PB}" stroke="${MU}" stroke-opacity=".7"/><circle r="4.5" fill="none" stroke="#fff" stroke-width="1.5"/></g>
+<text x="${PL}" y="${H-6}" font-size="9" fill="${MU}">${dateTxt[0]}</text><text x="${W-PR}" y="${H-6}" font-size="9" fill="${MU}" text-anchor="end">${dateTxt[1]}</text>
+<rect id="evr" x="0" y="0" width="${W}" height="${H}" fill="transparent"/></svg>`;
+}
+function barsSVG(M){
+  const GW=44,BW=15,h=170,pt=16,pb=26,w=Math.max(320,M.length*GW+8),mx=Math.max(1,...M.flatMap(o=>[o.gf,o.gc])),Y=v=>pt+(mx-v)*(h-pt-pb)/mx;
+  const bars=M.map((o,i)=>{
+    const x0=4+i*GW+(GW-2*BW-3)/2,mk=o.k,lbl=MES[+mk.slice(5,7)-1]+' '+mk.slice(2,4);
+    const bar=(x,v,c)=>`<rect x="${x.toFixed(1)}" y="${Y(v).toFixed(1)}" width="${BW}" height="${Math.max(v?1.5:0,h-pb-Y(v)).toFixed(1)}" rx="2" fill="${c}"/><text x="${(x+BW/2).toFixed(1)}" y="${(Y(v)-3).toFixed(1)}" font-size="9" fill="#e8ecf3" text-anchor="middle">${v}</text>`;
+    return bar(x0,o.gf,GF)+bar(x0+BW+3,o.gc,GO)+`<text x="${(x0+BW+1.5).toFixed(1)}" y="${h-12}" font-size="9" fill="${MU}" text-anchor="middle">${lbl}</text><text x="${(x0+BW+1.5).toFixed(1)}" y="${h-2}" font-size="8" fill="${MU}" text-anchor="middle">${o.n} PJ</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Goles por mes"><line x1="0" x2="${w}" y1="${h-pb}" y2="${h-pb}" stroke="${MU}" stroke-opacity=".5"/>${bars}</svg>`;
+}
+window.EVOX={series,monthly,lineSVG,barsSVG,lineGeom};
+
+/* ---------- integración con la página ---------- */
+function histInfo(){
+  const h=db.hcfg&&typeof db.hcfg==='object'?db.hcfg:{},nm=k=>String((h.names||{})[k]||'').trim()||(k==='new'?'EF27':'EF26');
+  const order=Array.isArray(h.order)&&h.order.length===2&&h.order.includes('new')&&h.order.includes('old')?h.order:['new','old'];
+  return{nm,order};
+}
+const short=d=>{const p=String(d).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0].slice(2):d};
+const tabOf=(ms,t)=>t==='new'?ms.filter(m=>!m.old):t==='old'?ms.filter(m=>m.old):ms;
+
+function content(box,r){
+  const HI=histInfo();
+  const tab=r?view.tab:homeF;
+  const base=r?db.matches.filter(m=>m.rid===r.id):db.matches;
+  const ms=pmAll(tabOf(base,tab)),S=series(ms),M=monthly(ms);
+  const tname=tab==='all'?'Todos':HI.nm(tab);
+  let h='<div class="card ev" style="margin-bottom:0">';
+  if(!r)h+=`<div class="tabs">${[['all','Todos'],...HI.order.map(k=>[k,HI.nm(k)])].map(t=>`<button class="${tab===t[0]?'on':''}" data-f="${t[0]}">${esc(t[1])}</button>`).join('')}</div>`;
+  else h+=`<small style="display:block;margin-bottom:4px">Mostrando: ${esc(tname)} (cambia con las pestañas de arriba)</small>`;
+  if(S.length<2){
+    h+='<p class="muted" style="margin:6px 0">Cargá al menos 2 partidos para ver la evolución.</p></div>';box.innerHTML=h;wire(box,r,S);return;
+  }
+  h+=`<h3>Balance acumulado</h3><small style="display:block;margin-bottom:4px">Sube con cada victoria y baja con cada derrota. Tocá el gráfico para ver cada partido.</small>${lineSVG(S,[short(S[0].m.date),short(S[S.length-1].m.date)])}<div class="evi" id="evi"></div>`;
+  h+=`<h3>Goles por mes</h3><div class="evl"><i style="background:${GF}"></i>A favor<i style="background:${GO}"></i>En contra</div><div class="evb" id="evb">${barsSVG(M)}</div></div>`;
+  box.innerHTML=h;wire(box,r,S);
+}
+function info(S,i){
+  const p=S[i],m=p.m,r=rv(m.rid),HI=histInfo(),res=p.r>0?'Victoria':p.r<0?'Derrota':'Empate',c=p.r>0?V:p.r<0?D:E;
+  return `<b style="color:${c}">${res}</b> · ${short(m.date)} · ${esc(r?meN(r):'')} ${m.my}-${m.opp} ${esc(r?opN(r):'')}<br><small>${esc(HI.nm(m.old?'old':'new'))} · balance ${sg(p.b)}</small>`;
+}
+function wire(box,r,S){
+  box.querySelectorAll('[data-f]').forEach(b=>{b.onclick=()=>{homeF=b.dataset.f;content(box,r)}});
+  const rect=box.querySelector('#evr'),inf=box.querySelector('#evi');if(!rect||!inf)return;
+  const svg=rect.ownerSVGElement,mk=svg.querySelector('#evm'),g=lineGeom(S);
+  const show=i=>{
+    mk.style.display='';mk.querySelector('line').setAttribute('x1',g.x(i));mk.querySelector('line').setAttribute('x2',g.x(i));
+    const c=mk.querySelector('circle');c.setAttribute('cx',g.x(i));c.setAttribute('cy',g.y(S[i].b));
+    inf.innerHTML=info(S,i);
+  };
+  const at=ev=>{const bb=svg.getBoundingClientRect(),px=(ev.clientX-bb.left)/bb.width*W;
+    show(g.n>1?Math.max(0,Math.min(g.n-1,Math.round((px-PL)/((W-PL-PR)/(g.n-1))))):0)};
+  rect.addEventListener('pointerdown',at);rect.addEventListener('pointermove',e=>{if(e.pressure>0||e.pointerType==='mouse')at(e)});
+  show(g.n-1);
+  const bw=box.querySelector('#evb');if(bw)bw.scrollLeft=bw.scrollWidth;
+}
+
+function build(r){
+  const f=document.createElement('div'),h=document.createElement('div'),b=document.createElement('div'),i=document.createElement('div'),box=document.createElement('div');
+  f.className='fold k-ev';h.className='fh';b.className='fb';i.className='fi';h.setAttribute('role','button');h.tabIndex=0;
+  const paint=()=>{const o=!!st.o;f.classList.toggle('open',o);h.setAttribute('aria-expanded',o);
+    h.innerHTML=`<div><b>📈 Evolución</b><br><small>${o?'Presionar para ocultar':'Presionar para ver'}</small></div><span class="ar">${o?'⬆':'⬇'}</span>`};
+  const tg=()=>{st.o=!st.o;try{localStorage.setItem(KU,JSON.stringify(st))}catch(e){}paint();if(st.o){const bw=box.querySelector('#evb');if(bw)bw.scrollLeft=bw.scrollWidth}};
+  h.addEventListener('click',tg);h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg()}});
+  paint();content(box,r);
+  i.appendChild(box);b.appendChild(i);f.append(h,b);
+  return f;
+}
+function inject(){
+  const app=$('#app');if(!app||app.querySelector('.k-ev'))return;
+  const r=view.r&&rv(view.r);
+  const anchor=[...app.querySelectorAll('section.card')].find(c=>{const t=c.querySelector('h2');return t&&(r?/^Estad/.test(t.textContent):t.textContent.trim()==='Total general')});
+  if(anchor)anchor.insertAdjacentElement('afterend',build(r||null));
+}
+const R6=window.render;
+window.render=function(){R6();try{inject()}catch(e){console.error('Evolución:',e)}};
+window.render();
+})();
+</script>
+<style>
+/* ===== BUSCADOR Y FILTROS v1 (solo estilos nuevos) ===== */
+#adv small{display:block}
+.fxg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fx input,.fx select{font-size:15px;padding:8px;margin:2px 0 8px}
+.fxb{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.fxb button{padding:7px 10px;font-size:13px}
+</style>
+<script>
+/* ===== BUSCADOR Y FILTROS v1: buscador, filtros avanzados y orden del historial. Solo filtra lo que se ve; no modifica ningún dato. Goleada = 3 o más goles de diferencia. ===== */
+/* Buscador del historial (solo filtra lo que se ve; no modifica ningún dato) */
+function tabMs(r){const a=sorted(db.matches.filter(m=>m.rid===r.id));return view.tab==='new'?a.filter(m=>!m.old):view.tab==='old'?a.filter(m=>m.old):a}
+function textMs(ms,r){
+  const q=(view.q||'').trim().toLowerCase();if(!q)return ms;
+  const s=q.match(/^(\d+)\s*[-–:x]\s*(\d+)$/);
+  if(s){const a=+s[1],b=+s[2],both=view.qb!==false;
+    return ms.filter(m=>{const p=PM(m,r);return(p.my===a&&p.opp===b)||(both&&p.my===b&&p.opp===a)})}
+  return ms.filter(m=>(fdate(m.date)+' '+meN(r)+' '+opN(r)).toLowerCase().includes(q));
+}
+function searchMs(ms,r){return sortMs(filtMs(textMs(ms,r),r),r)}
+function fCount(){const f=view.f||{};return(f.from||f.to?1:0)+['res','goals','diff'].filter(k=>f[k]).length+(f.sort&&f.sort!=='new'?1:0)}
+function advLabel(){const n=fCount();return 'Filtros avanzados '+(n?'('+n+') ':'')+(view.fa?'▴':'▾')}
+function qCount(ms,r){return((view.q||'').trim()||fCount())?searchMs(ms,r).length+' de '+ms.length:''}
+function filtMs(ms,r){
+  const f=view.f||{};
+  return ms.filter(m=>{
+    const p=PM(m,r),t=p.my+p.opp,d=p.my-p.opp,a=Math.abs(d);
+    if(f.from&&m.date<f.from)return false;
+    if(f.to&&m.date>f.to)return false;
+    if(f.res==='w'&&d<=0)return false;
+    if(f.res==='l'&&d>=0)return false;
+    if(f.res==='d'&&d!==0)return false;
+    if(f.goals==='many'&&t<7)return false;
+    if(f.goals==='few'&&t>2)return false;
+    if(f.goals==='none'&&t!==0)return false;
+    if(f.diff==='1'&&a!==1)return false;
+    if(f.diff==='2'&&a<2)return false;
+    if(f.diff==='3'&&a<3)return false;
+    return true;
+  });
+}
+function sortMs(ms,r){
+  const s=(view.f||{}).sort;if(!s||s==='new')return ms;
+  const c=[...ms];
+  if(s==='old')return c.sort((x,y)=>x.date.localeCompare(y.date)||x.ts-y.ts);
+  const k=m=>{const p=PM(m,r);return s==='goals'?p.my+p.opp:Math.abs(p.my-p.opp)};
+  return c.sort((x,y)=>k(y)-k(x)||y.date.localeCompare(x.date)||y.ts-x.ts);
+}
+function advHTML(r){
+  const f=view.f||{};
+  const o=(v,t,s)=>`<option value="${v}"${(s||'')===v?' selected':''}>${t}</option>`;
+  return `<div id="adv" class="fx" style="margin-top:10px;display:${view.fa?'block':'none'}">
+<small>Fecha</small>
+<div class="fxg"><label><small>Desde</small><input type="date" id="fd1" value="${f.from||''}" oninput="setF('from',this.value)"></label>
+<label><small>Hasta</small><input type="date" id="fd2" value="${f.to||''}" oninput="setF('to',this.value)"></label></div>
+<div class="fxb"><button class="btn alt" onclick="datePreset('today')">Hoy</button><button class="btn alt" onclick="datePreset('week')">Última semana</button><button class="btn alt" onclick="datePreset('month')">Último mes</button><button class="btn alt" onclick="datePreset('all')">Todo el historial</button></div>
+<div class="fxg"><label><small>Resultado</small><select onchange="setF('res',this.value)">${o('','Todos',f.res)}${o('w','Mis victorias',f.res)}${o('l','Victorias de '+esc(opN(r)),f.res)}${o('d','Empates',f.res)}</select></label>
+<label><small>Goles en el partido</small><select onchange="setF('goals',this.value)">${o('','Cualquiera',f.goals)}${o('many','Muchos (7 o más)',f.goals)}${o('few','Pocos (2 o menos)',f.goals)}${o('none','Sin goles (0-0)',f.goals)}</select></label>
+<label><small>Diferencia de goles</small><select onchange="setF('diff',this.value)">${o('','Cualquiera',f.diff)}${o('1','Por 1 gol',f.diff)}${o('2','Por 2 o más',f.diff)}${o('3','Goleadas (3 o más)',f.diff)}</select></label>
+<label><small>Ordenar por</small><select onchange="setF('sort',this.value)">${o('new','Más recientes',f.sort||'new')}${o('old','Más antiguos',f.sort)}${o('goals','Más goles',f.sort)}${o('diff','Mayor diferencia',f.sort)}</select></label></div></div>`;
+}
+function upd(){
+  const r=rv(view.r);if(!r)return;
+  const h=document.getElementById('hist');if(!h)return;
+  const all=tabMs(r);h.innerHTML=histHTML(searchMs(all,r),r);
+  const qc=$('#qc');if(qc)qc.textContent=qCount(all,r);
+  const b=$('#advb');if(b)b.textContent=advLabel();
+  try{window.paintUI&&window.paintUI()}catch(e){console.error('Buscador:',e)}
+  try{window.statsInject&&window.statsInject()}catch(e){console.error('Buscador:',e)}
+}
+function setF(k,v){view.f=view.f||{};view.f[k]=v;upd()}
+function toggleAdv(){view.fa=!view.fa;const a=$('#adv');if(a)a.style.display=view.fa?'block':'none';const b=$('#advb');if(b)b.textContent=advLabel()}
+function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function datePreset(k){
+  const d=new Date(),t=ymd(d);d.setDate(d.getDate()-(k==='week'?6:k==='month'?29:0));
+  view.f=view.f||{};
+  view.f.from=k==='all'?'':ymd(d);view.f.to=k==='all'?'':t;
+  const a=$('#fd1'),b=$('#fd2');if(a)a.value=view.f.from;if(b)b.value=view.f.to;
+  upd();
+}
+function doSearch(v){view.q=v;upd()}
+function toggleBoth(){view.qb=view.qb===false;render()}
+function clearSearch(){view.q='';view.f={};render()}
+(function(){
+const searchCard=(r,ms)=>`<div class="card" style="padding:10px"><input id="q" type="search" autocomplete="off" placeholder="Buscar: 3-2 o 05/2026" value="${esc(view.q||'')}" oninput="doSearch(this.value)" style="margin:0 0 8px;font-size:16px;padding:10px">
+<div class="row" style="margin:0 0 8px"><button id="advb" class="btn alt" style="padding:8px 10px;font-size:13px;flex:1" onclick="toggleAdv()">${advLabel()}</button><button class="btn alt" style="padding:8px 10px;font-size:13px" onclick="clearSearch()">Limpiar</button></div>
+<div class="row" style="margin:0"><button class="btn alt" style="padding:8px 10px;font-size:13px" onclick="toggleBoth()">↔ Ambos sentidos: ${view.qb===false?'No':'Sí'}</button><small id="qc">${qCount(ms,r)}</small></div>
+${advHTML(r)}</div>`;
+/* el historial se redibuja con los filtros, dentro de un solo contenedor para que el plegable "Historial de partidos" lo incluya */
+const RV0=window.rivalView;
+window.rivalView=function(r){
+  const h=RV0(r);
+  try{
+    const mark='<section class="card" style="padding-top:0">',i=h.lastIndexOf(mark);
+    if(i<0)return h;
+    const ms=tabMs(r);
+    return h.slice(0,i)+'<div id="histwrap">'+searchCard(r,ms)+`<section id="hist" class="card" style="padding-top:0">${histHTML(searchMs(ms,r),r)}</section></div>`;
+  }catch(e){console.error('Buscador:',e);return h}
+};
+/* orden especial del historial (más antiguos / más goles / mayor diferencia): lista plana */
+const HH0=window.histHTML;
+window.histHTML=function(ms,r){
+  const s=view.f&&view.f.sort;
+  if(s&&s!=='new')return `<h3 class="sec">${({old:'Más antiguos',goals:'Más goles',diff:'Mayor diferencia'})[s]} (${ms.length})</h3>`+(ms.length?ms.map(m=>rowHTML(m,r)).join(''):'<p class="muted">Sin partidos.</p>');
+  return HH0(ms,r);
+};
+/* al abrir un rival se limpian búsqueda y filtros */
+const OR0=window.openRival;
+window.openRival=function(id){view.q='';view.f={};view.fa=false;return OR0.apply(this,arguments)};
+})();
 </script>
 
 <script type="module">
@@ -411,6 +1397,97 @@ function start(){
   onValue(ref(rt,'.info/connected'),s=>{online=s.val()===true;paint()});
   addEventListener('online',paint);addEventListener('offline',paint);
   paint();
+}
+</script>
+<script type="module">
+/* ===== ESTADÍSTICAS DE PARTIDO v1: sincronización del nodo iator/mstats. Módulo aparte: no modifica el módulo de arriba. ===== */
+import {getApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getDatabase,ref,set,remove,onValue} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+let app=null;
+try{app=getApp()}catch(e){console.warn('Estadísticas: sin Firebase, quedan solo en el dispositivo')}
+if(app){
+  const rt=getDatabase(app),P='iator/mstats',KS='iator_mstats_known',KD='iator_mstats_del';
+  const jl=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
+  const ser=o=>JSON.stringify(o,(k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.keys(v).sort().reduce((a,x)=>(a[x]=v[x],a),{}):v);
+  const L=()=>db.mstats&&typeof db.mstats==='object'&&!Array.isArray(db.mstats)?db.mstats:(db.mstats={});
+  const ok=(v,mx)=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=mx;
+  function clean(o){
+    if(!o||typeof o!=='object')return null;
+    const r={ts:Number(o.ts)||0};let n=0;
+    (window.MSTAT_FIELDS||[]).forEach(([k])=>{
+      const v=o[k];if(!v||typeof v!=='object')return;
+      const mx=k==='pos'?100:999,x={};
+      if(ok(v.a,mx))x.a=v.a;if(ok(v.b,mx))x.b=v.b;
+      if(x.a!==undefined||x.b!==undefined){r[k]=x;n++}
+    });
+    return n?r:null;
+  }
+
+  const bd=document.createElement('div');
+  bd.id='cloud2';
+  bd.style.cssText='position:fixed;right:12px;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);font-size:12px;color:#ef4444;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 10px;z-index:5;display:none';
+  bd.textContent='📊 Estadísticas: error · revisá las reglas de Firebase';
+  document.body.appendChild(bd);
+  let failed=false;
+  const paint=()=>{bd.style.display=failed?'block':'none'};
+  const onErr=e=>{console.error('Estadísticas (Firebase):',e);failed=true;paint()};
+
+  const known=new Set(jl(KS,[]));
+  const sent={};
+  let ready=false;
+  const saveKnown=()=>{try{localStorage.setItem(KS,JSON.stringify([...known]))}catch(e){}};
+  const pushOne=(id,rec)=>{const s=ser(rec);if(sent[id]===s)return;sent[id]=s;set(ref(rt,P+'/'+id),rec).catch(onErr)};
+
+  function flushDel(){
+    jl(KD,[]).forEach(id=>{
+      delete sent[id];known.delete(id);
+      remove(ref(rt,P+'/'+id)).then(()=>{
+        try{localStorage.setItem(KD,JSON.stringify(jl(KD,[]).filter(x=>x!==id)))}catch(e){}
+      }).catch(onErr);
+    });
+    saveKnown();
+  }
+
+  function merge(R){
+    const m=L(),del=new Set(jl(KD,[]));let changed=false;
+    /* nube -> dispositivo */
+    Object.keys(R).forEach(id=>{
+      if(del.has(id))return;
+      const r=clean(R[id]);if(!r)return;
+      sent[id]=ser(r);
+      const l=m[id]?clean(m[id]):null;
+      if(!l){if(m[id]||!known.has(id)){m[id]=r;changed=true}}
+      else if((r.ts||0)>(l.ts||0)&&ser(r)!==ser(l)){m[id]=r;changed=true}
+      known.add(id);
+    });
+    /* dispositivo -> nube */
+    Object.keys(m).forEach(id=>{
+      const l=clean(m[id]);if(!l)return;
+      if(R[id]===undefined){
+        if(known.has(id)&&!del.has(id)){delete m[id];known.delete(id);changed=true}   /* se borró desde otro dispositivo */
+        else pushOne(id,l);                                                           /* es nuevo de este dispositivo */
+      }else{
+        const r=clean(R[id]);
+        if(r&&ser(r)!==ser(l)&&(l.ts||0)>(r.ts||0))pushOne(id,l);
+      }
+    });
+    saveKnown();
+    if(changed){try{localStorage.setItem(K,JSON.stringify(db))}catch(e){}render()}
+  }
+
+  window.mstatsSync=()=>{
+    if(!ready)return;
+    const m=L();
+    Object.keys(m).forEach(id=>{const c=clean(m[id]);if(c)pushOne(id,c)});
+  };
+  window.mstatsFlush=()=>{if(ready)flushDel()};
+
+  onValue(ref(rt,P),s=>{
+    failed=false;paint();
+    merge(s.val()||{});
+    if(!ready){ready=true;flushDel()}
+  },onErr);
 }
 </script>
 </body></html>
