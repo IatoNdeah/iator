@@ -99,11 +99,16 @@ function hoyHTML(pms,titulo){
   const h=pms.filter(m=>m.date===today());
   if(!h.length)return '';
   const s=stats(h),o=[...h].sort((a,b)=>(a.ts||0)-(b.ts||0));
-  const ch=o.map(m=>m.my>m.opp?'<b class="g">G</b>':m.my<m.opp?'<b class="r">P</b>':'<b class="y">E</b>').join(' ');
+  const ch=o.map(m=>m.my>m.opp?'<span class="ch W">V</span>':m.my<m.opp?'<span class="ch L">D</span>':'<span class="ch D">E</span>').join('');
   return `<section class="card" style="border-color:var(--acc)"><h2>🔥 ${titulo}</h2>
 <div class="grid">${st(s.pj,'Jugados')}${st(s.w+' - '+s.d+' - '+s.l,'G - E - P')}${st(sg(s.bal),'Balance',cls(s.bal))}</div>
-<div style="margin:10px 0 4px;font-size:18px;letter-spacing:3px">${ch}</div>
+<div style="margin:10px 0 6px">${ch}</div>
 <small>GF ${s.gf} · GC ${s.gc} · Dif. ${sg(s.dg)}</small></section>`;
+}
+function formaHTML(r){
+  const L=sorted(db.matches.filter(m=>m.rid===r.id)).slice(0,5).reverse();
+  if(!L.length)return '';
+  return `<div style="margin-top:8px;display:flex;align-items:center"><span class="muted" style="font-size:11px;margin-right:8px">Últimos ${L.length}</span>${L.map(m=>{const p=PM(m,r),c=p.my>p.opp?'W':p.my<p.opp?'L':'D';return `<span class="ch ${c}">${c==='W'?'V':c==='L'?'D':'E'}</span>`}).join('')}</div>`;
 }
 const BK=K+'_lastbk',BS=K+'_bksnooze';
 const dayDiff=(a,b)=>Math.round((new Date(a)-new Date(b))/864e5);
@@ -130,7 +135,7 @@ ${backupBanner()}${hoyHTML(pmAll(db.matches),'Balance de hoy · todos los rivale
 ${db.rivals.length?db.rivals.map(r=>{
   const t=stats(pmAll(db.matches.filter(m=>m.rid===r.id)));
   return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(r.name)}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
-<small>${t.pj} PJ · ${t.w}G ${t.d}E ${t.l}P · GF ${t.gf} GC ${t.gc}</small></div>`}).join('')
+<small>${t.pj} PJ · ${t.w}G ${t.d}E ${t.l}P · GF ${t.gf} GC ${t.gc}</small>${formaHTML(r)}</div>`}).join('')
 :'<p class="muted">Todavía no hay rivales. Tocá “+ Rival”.</p>'}
 <section class="card"><h2>Respaldo y exportación</h2><small style="display:block;margin:-6px 0 10px">${lastBk()}</small>
 <div class="row"><button class="btn" onclick="exportData()">Respaldo (.json)</button>
@@ -380,6 +385,7 @@ ${l.length?l.map(e=>`<div class="m" style="display:block"><small>${f(e.t)} · <s
 const UI='iator_ui_v1';let op={};try{op=JSON.parse(localStorage.getItem(UI))||{}}catch(e){}
 function fold(key,title,nodes,hide){
   if(!nodes[0]||!nodes[nodes.length-1])return;
+  if(op[key]===undefined)op[key]=['tot','es'].indexOf(key)>-1;
   const f=document.createElement('div'),h=document.createElement('div'),b=document.createElement('div'),i=document.createElement('div');
   f.className='fold k-'+key;h.className='fh';b.className='fb';i.className='fi';h.setAttribute('role','button');h.tabIndex=0;
   const paint=()=>{const o=!!op[key];f.classList.toggle('open',o);h.setAttribute('aria-expanded',o);
@@ -399,6 +405,9 @@ function folds(){
   if(row&&row.nextElementSibling){row.style.justifyContent='flex-end';fold('hist','Historial de partidos',[row,row.nextElementSibling],row.querySelector('h2'))}
   const v=app.querySelector('#ver');
   if(v)fold('ver','Verificador de datos',[v],v.querySelector('h2'));
+  const by=(t,pre)=>[...app.querySelectorAll('section.card')].find(x=>{const h=x.querySelector(':scope>h2');return h&&(pre?h.textContent.startsWith(t):h.textContent.trim()===t)});
+  [['tot','Total general','Total general'],['dt','Datos:','Datos'],['bk','Respaldo y exportación','Respaldo y exportación']].forEach(a=>{const x=by(a[1]);if(x)fold(a[0],a[2],[x],x.querySelector(':scope>h2'))});
+  const es=by('Estadísticas ·',1);if(es)fold('es',es.querySelector(':scope>h2').textContent,[es],es.querySelector(':scope>h2'));
 }
 const R=window.render;
 window.render=function(){R();try{const r=view.r&&rv(view.r);$('#app').insertAdjacentHTML('beforeend',(r?datos(r):verify())+logHTML())}catch(e){console.error('Ampliaciones:',e)}
@@ -1647,6 +1656,7 @@ const firebaseConfig={
   appId:"1:397322044767:web:470cb48e2789a1b97ea2ea"
 };
 
+function toast(t){let e=document.getElementById('stoast');if(!e){e=document.createElement('div');e.id='stoast';e.style.cssText='position:fixed;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:90%;background:var(--card);border:1px solid var(--acc);color:#e8ecf3;padding:10px 16px;border-radius:14px;font-size:14px;font-weight:600;z-index:20;box-shadow:0 6px 20px #0009;text-align:center';e.onclick=()=>e.remove();document.body.appendChild(e)}e.textContent=t;clearTimeout(toast.t);toast.t=setTimeout(()=>e.remove(),4500)}
 const badge=document.getElementById('cloud');
 let online=false,fail=false;
 function paint(){
@@ -1707,6 +1717,17 @@ function start(){
   };
 
   function apply(){
+    try{
+      const nu=Object.keys(remM).filter(id=>!(id in sent.m)).length,
+            de=Object.keys(sent.m).filter(id=>!(id in remM)).length,
+            ed=Object.keys(remM).filter(id=>(id in sent.m)&&sent.m[id]!==ser(remM[id])).length,
+            rn=Object.keys(remR).filter(id=>!(id in sent.r)).length,p=[];
+      if(nu)p.push(nu+(nu>1?' partidos nuevos':' partido nuevo'));
+      if(ed)p.push(ed+(ed>1?' editados':' editado'));
+      if(de)p.push(de+(de>1?' eliminados':' eliminado'));
+      if(rn)p.push(rn+(rn>1?' rivales nuevos':' rival nuevo'));
+      if(p.length)toast('☁️ Sincronizado: '+p.join(' · '));
+    }catch(e){}
     const flips=Object.fromEntries(db.rivals.map(r=>[r.id,r.flip]));
     db.rivals=withFlips(Object.values(remR),flips);
     db.matches=Object.values(remM);
