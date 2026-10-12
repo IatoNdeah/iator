@@ -44,7 +44,7 @@ input[type=color]{height:48px;padding:4px}
 #cloud{position:fixed;right:12px;bottom:max(10px,env(safe-area-inset-bottom));font-size:12px;color:#8b95a9;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 10px;z-index:5}
 </style></head><body>
 <div id="app"></div>
-<div id="appver" style="max-width:560px;margin:8px auto 40px;text-align:right;font-size:12px;color:#8b95a9">v1.0.24</div>
+<div id="appver" style="max-width:560px;margin:8px auto 40px;text-align:right;font-size:12px;color:#8b95a9">v1.0.29</div>
 <div id="cloud">☁️ Conectando…</div>
 <script>
 const K='duelosfc_v1';
@@ -102,10 +102,11 @@ function hoyHTML(pms,titulo){
   const s=stats(h),o=[...h].sort((a,b)=>(a.ts||0)-(b.ts||0));
   const ch=o.map(m=>m.my>m.opp?'<span class="ch W">V</span>':m.my<m.opp?'<span class="ch L">D</span>':'<span class="ch D">E</span>').join('');
   return `<section class="card" style="border-color:var(--acc)"><h2>🔥 ${titulo}</h2>
-<div class="grid">${st(s.pj,'Jugados')}${st(s.w+' - '+s.d+' - '+s.l,'G - E - P')}${st(sg(s.bal),'Balance',cls(s.bal))}</div>
+<div class="grid">${st(s.pj,'Jugados')}${st(s.w+'-'+s.d+'-'+s.l,'G - E - P')}${st(sg(s.bal),'Balance',cls(s.bal))}</div>
 <div style="margin:10px 0 6px">${ch}</div>
 <small>GF ${s.gf} · GC ${s.gc} · Dif. ${sg(s.dg)}</small></section>`;
 }
+const cap=s=>{s=String(s);return s.charAt(0).toUpperCase()+s.slice(1)};
 function formaHTML(r){
   const L=sorted(db.matches.filter(m=>m.rid===r.id)).slice(0,5).reverse();
   if(!L.length)return '';
@@ -135,9 +136,10 @@ ${backupBanner()}${hoyHTML(pmAll(db.matches),'Balance de hoy · todos los rivale
 <div class="row"><h2>Rivales</h2><button class="btn" onclick="rivalForm()">+ Rival</button></div>
 ${db.rivals.length?db.rivals.map(r=>{
   const t=stats(pmAll(db.matches.filter(m=>m.rid===r.id)));
-  return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(r.name)}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
+  return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(cap(meN(r)))} VS ${esc(cap(opN(r)))}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
 <small>${t.pj} PJ · ${t.w}G ${t.d}E ${t.l}P · GF ${t.gf} GC ${t.gc}</small>${formaHTML(r)}</div>`}).join('')
 :'<p class="muted">Todavía no hay rivales. Tocá “+ Rival”.</p>'}
+<div class="row"><h2>Extras</h2></div>
 <section class="card"><h2>Respaldo y exportación</h2><small style="display:block;margin:-6px 0 10px">${lastBk()}</small>
 <div class="row"><button class="btn" onclick="exportData()">Respaldo (.json)</button>
 <button class="btn alt" onclick="$('#imp').click()">Importar</button></div>
@@ -1244,7 +1246,7 @@ function build(r){
   return f;
 }
 function inject(){
-  const app=$('#app');if(!app||app.querySelector('.k-ev'))return;
+  const app=$('#app');if(!app||view.r||app.querySelector('.k-ev'))return;
   const r=view.r&&rv(view.r);
   const anchor=[...app.querySelectorAll('section.card')].find(c=>{const t=c.querySelector('h2');return t&&(r?/^Estad/.test(t.textContent):t.textContent.trim()==='Total general')});
   if(anchor)(anchor.closest('.fold')||anchor).insertAdjacentElement('afterend',build(r||null));
@@ -1859,4 +1861,36 @@ if(app){
   },onErr);
 }
 </script>
+<style>
+.gh{display:inline-flex;align-items:center;gap:6px;margin:0;padding:8px 14px;background:var(--card);border:1px solid var(--line);border-radius:12px;font-size:16px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.gh:active{background:var(--line)}
+</style>
+<script>
+/* ===== APARTADOS OCULTABLES v1: tocar el título "Rivales" o "Extras" de la pantalla principal oculta o muestra todo lo que tiene debajo.
+   No mueve ni envuelve nada (los plegables de adentro siguen como están): solo muestra/oculta. Recuerda el estado en este dispositivo. ===== */
+(function(){
+const KG='iator_ui_grp_v1';let st={};try{st=JSON.parse(localStorage.getItem(KG))||{}}catch(e){}
+const GR=[['riv','Rivales'],['ext','Extras']];
+function aplicar(){
+  const app=document.getElementById('app');if(!app||view.r)return;
+  const kids=[...app.children];
+  const heads=GR.map(g=>({k:g[0],t:g[1],el:kids.find(e=>e.classList.contains('row')&&e.firstElementChild&&e.firstElementChild.tagName==='H2'&&e.firstElementChild.textContent.trim().indexOf(g[1])===0)})).filter(h=>h.el);
+  heads.forEach((h,i)=>{
+    const next=heads[i+1]?heads[i+1].el:null,body=[];
+    for(let n=h.el.nextElementSibling;n&&n!==next;n=n.nextElementSibling)body.push(n);
+    const h2=h.el.firstElementChild;
+    const pintar=()=>{const o=st[h.k]!==false;body.forEach(e=>{e.style.display=o?'':'none'});
+      h2.innerHTML=h.t+' <span style="color:var(--acc);font-size:16px;margin-left:2px">'+(o?'⬆':'⬇')+'</span>';h2.setAttribute('aria-expanded',o)};
+    const tg=()=>{st[h.k]=(st[h.k]===false);try{localStorage.setItem(KG,JSON.stringify(st))}catch(e){}pintar()};
+    h2.className='gh';h2.setAttribute('role','button');h2.tabIndex=0;
+    h2.onclick=tg;h2.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg()}};
+    pintar();
+  });
+}
+const R10=window.render;
+window.render=function(){R10();try{aplicar()}catch(e){console.error('Apartados ocultables:',e)}};
+window.render();
+})();
+</script>
+
 </body></html>
