@@ -94,10 +94,37 @@ ${st(s.gf,'Goles a favor')}${st(s.gc,'Goles en contra')}${st(sg(s.dg),'Dif. de g
 <small><span class="g">${s.pw}% victorias</span> · <span class="y">${s.pd}% empates</span> · <span class="r">${s.pl}% derrotas</span></small>`;
 }
 
+/* ===== BALANCE DE HOY + RECORDATORIO DE RESPALDO ===== */
+function hoyHTML(pms,titulo){
+  const h=pms.filter(m=>m.date===today());
+  if(!h.length)return '';
+  const s=stats(h),o=[...h].sort((a,b)=>(a.ts||0)-(b.ts||0));
+  const ch=o.map(m=>m.my>m.opp?'<b class="g">G</b>':m.my<m.opp?'<b class="r">P</b>':'<b class="y">E</b>').join(' ');
+  return `<section class="card" style="border-color:var(--acc)"><h2>🔥 ${titulo}</h2>
+<div class="grid">${st(s.pj,'Jugados')}${st(s.w+' - '+s.d+' - '+s.l,'G - E - P')}${st(sg(s.bal),'Balance',cls(s.bal))}</div>
+<div style="margin:10px 0 4px;font-size:18px;letter-spacing:3px">${ch}</div>
+<small>GF ${s.gf} · GC ${s.gc} · Dif. ${sg(s.dg)}</small></section>`;
+}
+const BK=K+'_lastbk',BS=K+'_bksnooze';
+const dayDiff=(a,b)=>Math.round((new Date(a)-new Date(b))/864e5);
+function backupBanner(){
+  if(!db.matches.length)return '';
+  const last=localStorage.getItem(BK),sn=localStorage.getItem(BS);
+  if(sn&&sn>today())return '';
+  const d=last?dayDiff(today(),last):null;
+  if(d!==null&&d<14)return '';
+  return `<section class="card" style="border-color:#eab308"><b>💾 ${d===null?'Todavía no hiciste un respaldo':'Hace '+d+' días que no hacés un respaldo'}</b>
+<small style="display:block;margin:4px 0 10px">Baja un .json con todos tus partidos. Guardalo en tu celular o en Drive.</small>
+<div class="row" style="margin:0"><button class="btn alt" onclick="snoozeBackup()">Más tarde</button><button class="btn" onclick="exportData();render()">Descargar ahora</button></div></section>`;
+}
+function snoozeBackup(){const d=new Date();d.setDate(d.getDate()+3);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());localStorage.setItem(BS,d.toISOString().slice(0,10));render()}
+const lastBk=()=>{const l=localStorage.getItem(BK);return l?'Último respaldo: '+fdate(l)+' (hace '+dayDiff(today(),l)+' días)':'Todavía no hiciste ningún respaldo.'};
+
 function homeView(){
   const s=stats(pmAll(db.matches));
   return `<div class="row" style="margin-bottom:0"><h1 style="margin-bottom:0">⚽ ${esc(db.cfg.name)}</h1><button class="ic" onclick="themeForm()">🎨</button></div>
 <small style="display:block;margin:2px 0 16px">Creado por Iato</small>
+${backupBanner()}${hoyHTML(pmAll(db.matches),'Balance de hoy · todos los rivales')}
 <section class="card"><h2>Total general</h2>${statsHTML(s)}</section>
 <div class="row"><h2>Rivales</h2><button class="btn" onclick="rivalForm()">+ Rival</button></div>
 ${db.rivals.length?db.rivals.map(r=>{
@@ -105,7 +132,7 @@ ${db.rivals.length?db.rivals.map(r=>{
   return `<div class="card tap" onclick="openRival('${r.id}')"><div class="row"><b>${esc(r.name)}</b><b class="${cls(t.bal)}">${sg(t.bal)}</b></div>
 <small>${t.pj} PJ · ${t.w}G ${t.d}E ${t.l}P · GF ${t.gf} GC ${t.gc}</small></div>`}).join('')
 :'<p class="muted">Todavía no hay rivales. Tocá “+ Rival”.</p>'}
-<section class="card"><h2>Respaldo y exportación</h2>
+<section class="card"><h2>Respaldo y exportación</h2><small style="display:block;margin:-6px 0 10px">${lastBk()}</small>
 <div class="row"><button class="btn" onclick="exportData()">Respaldo (.json)</button>
 <button class="btn alt" onclick="$('#imp').click()">Importar</button></div>
 <div class="row"><button class="btn alt" style="width:100%" onclick="exportTxt()">Exportar historial completo (.txt)</button></div>
@@ -137,6 +164,7 @@ function rivalView(r){
 <small style="display:block;margin:-8px 0 6px">Ver resultados como:</small>
 <div class="tabs"><button class="${r.flip?'':'on'}" onclick="setFlip('${r.id}',false)">Soy ${esc(ME())}</button><button class="${r.flip?'on':''}" onclick="setFlip('${r.id}',true)">Soy ${esc(r.name)}</button></div>
 <div class="tabs">${TABS.map(t=>`<button class="${view.tab===t[0]?'on':''}" onclick="setTab('${t[0]}')">${t[1]} (${cnt(t[0])})</button>`).join('')}</div>
+${hoyHTML(all.map(m=>PM(m,r)),'Hoy contra '+esc(r.name))}
 <section class="card"><h2>Estadísticas · ${TABS.find(t=>t[0]===view.tab)[1]}</h2>${statsHTML(stats(ms.map(m=>PM(m,r))))}</section>
 <div class="row"><h2>Historial</h2><button class="btn" onclick="matchForm()">+ Partido</button></div>
 <section class="card" style="padding-top:0">${histHTML(ms,r)}</section>`;
@@ -220,7 +248,7 @@ function dl(name,type,txt){
   a.href=URL.createObjectURL(new Blob([txt],{type}));
   a.download=name;a.click();
 }
-function exportData(){dl('iator-respaldo-'+today()+'.json','application/json',JSON.stringify(db,null,2))}
+function exportData(){dl('iator-respaldo-'+today()+'.json','application/json',JSON.stringify(db,null,2));localStorage.setItem(BK,today())}
 function exportTxt(){
   const sum=s=>`PJ ${s.pj} | Mis victorias ${s.w} | Empates ${s.d} | Mis derrotas ${s.l} | Victorias rival ${s.l} | GF ${s.gf} | GC ${s.gc} | Dif ${sg(s.dg)} | Balance ${sg(s.bal)} | ${s.pw}% V - ${s.pd}% E - ${s.pl}% D`;
   const fmt=(a,r)=>a.length?sorted(a).map(m=>{const p=PM(m,r);return `${fdate(m.date)}  ${meN(r)} ${p.my} - ${p.opp} ${opN(r)}`}):['(sin partidos)'];
