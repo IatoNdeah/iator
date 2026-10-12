@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f17"><title>Árbol de consecuencias · Iator</title>
+<style>
+:root{--acc:#22c55e;--bg:#0b0f17;--card:color-mix(in srgb,var(--bg) 90%,#fff 10%);--line:color-mix(in srgb,var(--bg) 78%,#fff 22%);--a:#22c55e;--b:#f97316;--mut:#8b95a9}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:#e8ecf3;font:15px system-ui,sans-serif;padding:max(14px,env(safe-area-inset-top)) 14px 40px}
+body.op{padding-bottom:68vh}#app{max-width:620px;margin:auto}
+h1{font-size:20px;margin:2px 0}h4{margin:14px 0 6px;font-size:12px;color:var(--acc);text-transform:uppercase;letter-spacing:.5px}
+small,.mut{color:var(--mut)}ul{margin:0;padding-left:18px}li{margin:4px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0}
+select{width:100%;font:inherit;background:var(--bg);color:#fff;border:1px solid var(--line);border-radius:10px;padding:9px;margin:4px 0 8px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.seg{display:flex;gap:6px;margin:4px 0 8px}
+.seg button,.btn{flex:1;font:inherit;background:var(--line);color:#e8ecf3;border:0;border-radius:10px;padding:9px 6px;font-weight:600}
+.seg .on{background:var(--acc);color:#04210f}
+.nd .ch{margin-left:12px;padding-left:10px;border-left:2px solid var(--line)}.nd .ch.flat{margin-left:0;padding-left:0;border-left:0}
+.rw{display:flex;gap:2px;margin:3px 0}.rw .tg{width:26px;background:none;border:0;color:var(--mut);flex:none;font:inherit}
+.rw .bd{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.rw.in .bd{border-color:color-mix(in srgb,var(--acc) 50%,var(--line))}.rw.sel .bd{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--mut)}.dot.A{background:var(--a)}.dot.B{background:var(--b)}
+.t{font-weight:700;font-size:14px}.t i{font-style:normal;font-weight:400;color:var(--mut);font-size:12px}
+#sh{position:fixed;left:0;right:0;bottom:0;max-height:64vh;overflow:auto;background:var(--card);border-top:2px solid var(--acc);border-radius:18px 18px 0 0;padding:14px 16px calc(24px + env(safe-area-inset-bottom));display:none;z-index:5}
+body.op #sh{display:block}.hd{display:flex;justify-content:space-between;gap:8px}.x{background:var(--line);color:#fff;border:0;border-radius:50%;width:32px;height:32px;flex:none}
+.sc{display:flex;align-items:center;justify-content:center;gap:10px;margin:10px 0;text-align:center}.sc b{font-size:26px}.sc span{flex:1}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:5px 4px;border-top:1px solid var(--line);text-align:right}th{color:var(--mut);font-weight:600}td:first-child,th:first-child{text-align:left}
+.chip{display:inline-block;background:var(--line);border-radius:14px;padding:5px 10px;margin:3px 4px 3px 0;font-size:13px}
+</style></head><body><div id="app"></div><div id="sh"></div>
+<script>
+/*A-START*/
+const ARB=(function(){
+const IC={inicio:'🌱',racha_ini:'🔥',racha_fin:'✂️',record_racha:'🏆',record_goleada:'💥',record_goles:'⚽',igualo:'⚖️',delantera:'👑'};
+const PRI=['delantera','igualo','record_racha','record_goleada','record_goles','racha_ini','racha_fin','inicio'];
+const fd=d=>{const p=String(d).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0].slice(2):d};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function analyze(ms,o){
+  const n=ms.length,A=ms.map(m=>o.flip?m.opp:m.my),B=ms.map(m=>o.flip?m.my:m.opp);
+  const R=A.map((a,i)=>a>B[i]?'W':a<B[i]?'L':'D'),wA=[],wB=[];let x=0,y=0;
+  R.forEach(r=>{r==='W'?x++:r==='L'?y++:0;wA.push(x);wB.push(y)});
+  const st=[];let cur=null;
+  for(let i=0;i<n;i++){const s=R[i]==='W'?'A':R[i]==='L'?'B':null;
+    if(s&&cur&&cur.side===s){cur.end=i;cur.len++}
+    else{if(cur){cur.brokenBy=i;st.push(cur);cur=null}if(s)cur={side:s,start:i,end:i,len:1,brokenBy:null}}}
+  if(cur)st.push(cur);
+  const ev=A.map(()=>[]),add=(i,e)=>ev[i].push(e),MS=o.minStreak;
+  add(0,{k:'inicio'});
+  st.forEach((s,k)=>{s.id=k;if(s.len>=MS){add(s.start,{k:'racha_ini',side:s.side,s:k});if(s.brokenBy!=null)add(s.brokenBy,{k:'racha_fin',side:s.side,s:k})}});
+  let mxS=0;
+  st.forEach((s,k)=>{if(s.len>mxS){if(mxS>0&&s.len>=MS)add(s.start+mxS,{k:'record_racha',side:s.side,s:k,prev:mxS});mxS=s.len}});
+  let mD=-1,mT=-1;
+  for(let i=0;i<n;i++){const d=Math.abs(A[i]-B[i]),t=A[i]+B[i];
+    if(i>0&&d>mD&&d>=3)add(i,{k:'record_goleada',side:A[i]>B[i]?'A':'B',diff:d,prev:mD});
+    if(i>0&&t>mT&&t>=7)add(i,{k:'record_goles',tot:t,prev:mT});
+    mD=Math.max(mD,d);mT=Math.max(mT,t);
+    const ps=i?Math.sign(wA[i-1]-wB[i-1]):0,cs=Math.sign(wA[i]-wB[i]);
+    if(ps!==0&&cs===0)add(i,{k:'igualo',from:ps>0?'A':'B'});
+    else if(ps===0&&cs!==0&&i>0&&wA[i-1]+wB[i-1]>0)add(i,{k:'delantera',side:cs>0?'A':'B'})}
+  const nodes=[],byIdx={};
+  ev.forEach((e,i)=>{if(e.length){const nd={idx:i,ev:e,children:[],parent:null,depth:0,wEnd:i};nodes.push(nd);byIdx[i]=nd}});
+  const dom=nodes.filter(d=>d.ev.some(e=>e.k==='igualo'||e.k==='delantera')).map(d=>d.idx);
+  nodes.forEach(nd=>nd.ev.forEach(e=>{let w=nd.idx;
+    if(e.k==='racha_ini')w=st[e.s].end;else if(e.k==='racha_fin')w=nd.idx+2;
+    else if(e.k==='igualo'||e.k==='delantera'){const nx=dom.find(v=>v>nd.idx);w=nx==null?n-1:nx-1}
+    else if(e.k!=='inicio')w=nd.idx+3;
+    nd.wEnd=Math.max(nd.wEnd,w)}));
+  nodes.forEach((nd,j)=>{if(j===0)return;let p=null;
+    const ex=nd.ev.find(e=>e.k==='racha_fin'||e.k==='record_racha');
+    if(ex){const s=byIdx[st[ex.s].start];if(s&&s!==nd)p=s}
+    if(!p)for(let q=j-1;q>=0;q--)if(nodes[q].wEnd>=nd.idx){p=nodes[q];break}
+    p=p||nodes[0];nd.parent=p;p.children.push(nd)});
+  const walk=(nd,d)=>{nd.depth=d;nd.children.forEach(c=>walk(c,d+1))};walk(nodes[0],0);
+  const rng=(a,b)=>{a=Math.max(0,a);b=Math.min(n-1,b);const s={n:0,w:0,d:0,l:0,ga:0,gb:0};
+    for(let i=a;i<=b;i++){s.n++;R[i]==='W'?s.w++:R[i]==='L'?s.l++:s.d++;s.ga+=A[i];s.gb+=B[i]}return s};
+  return {n,A,B,R,wA,wB,st,nodes,byIdx,rng};
+}
+const nm=(c,s)=>s==='A'?c.nA:c.nB,oth=s=>s==='A'?'B':'A';
+function evTxt(e,nd,an,c){const s=an.st[e.s];switch(e.k){
+  case'inicio':return 'Primer partido de la serie.';
+  case'racha_ini':return `Empezó una racha de ${s.len} victorias de ${nm(c,s.side)}${s.brokenBy==null?' (sigue activa)':''}.`;
+  case'racha_fin':return `${an.R[nd.idx]==='D'?'Un empate cortó':nm(c,oth(s.side))+' cortó'} la racha de ${s.len} victorias de ${nm(c,s.side)}.`;
+  case'record_racha':return `Superó la mayor racha de la serie (antes ${e.prev}): ${nm(c,s.side)} llegó a ${s.len}.`;
+  case'record_goleada':return `Nueva mayor goleada: ${e.diff} goles de diferencia a favor de ${nm(c,e.side)} (antes ${e.prev}).`;
+  case'record_goles':return `Partido con más goles de la serie: ${e.tot} (antes ${e.prev}).`;
+  case'igualo':return `La serie quedó igualada en victorias (antes lideraba ${nm(c,e.from)}).`;
+  case'delantera':return `${nm(c,e.side)} tomó la delantera en victorias.`}return ''}
+function evTitle(e,an,c){const s=an.st[e.s];switch(e.k){
+  case'inicio':return 'Primer partido';case'racha_ini':return `Racha de ${s.len} · ${nm(c,s.side)}`;
+  case'racha_fin':return `Cortó racha de ${s.len}`;case'record_racha':return 'Récord de racha';
+  case'record_goleada':return `Récord: goleada de ${e.diff}`;case'record_goles':return `Récord: ${e.tot} goles`;
+  case'igualo':return 'Serie igualada';case'delantera':return `${nm(c,e.side)} toma la delantera`}return ''}
+const prim=nd=>{const k=PRI.find(k=>nd.ev.some(e=>e.k===k));return nd.ev.find(e=>e.k===k)};
+const sideOf=e=>e.side||(e.from?oth(e.from):'');
+const desc=nd=>nd.children.reduce((a,c)=>a.concat([c],desc(c)),[]);
+function treeHTML(an,c,sel,col){
+  const sub=new Set(sel?desc(sel).map(d=>d.idx):[]);
+  const rec=(nd,dp)=>{const m=c.ms[nd.idx],e=prim(nd),hid=col.has(m.id)&&nd.children.length,more=nd.ev.length>1?` <i>+${nd.ev.length-1}</i>`:'';
+    return `<div class="nd"><div class="rw${sel===nd?' sel':''}${sub.has(nd.idx)?' in':''}">`+
+    (nd.children.length?`<button class="tg" data-a="tg" data-v="${esc(m.id)}">${hid?'▸':'▾'}</button>`:'<span class="tg"></span>')+
+    `<div class="bd" data-a="sel" data-v="${esc(m.id)}"><div class="t"><span class="dot ${sideOf(e)}"></span>${IC[e.k]} ${esc(evTitle(e,an,c))}${more}${nd.children.length?` <i>· 🌿${desc(nd).length}</i>`:''}</div>`+
+    `<small>${fd(m.date)} · ${esc(c.nA)} ${an.A[nd.idx]}-${an.B[nd.idx]} ${esc(c.nB)} · ${esc(c.hl(m))}</small></div></div>`+
+    (nd.children.length&&!hid?`<div class="ch${dp>=5?' flat':''}">${nd.children.map(k=>rec(k,dp+1)).join('')}</div>`:'')+'</div>'};
+  return rec(an.nodes[0],0)}
+function chart(an,c,i,K){const n=an.n;if(n<2)return '';
+  const d=an.wA.map((x,j)=>x-an.wB[j]),mn=Math.min(0,...d),mx=Math.max(0,...d),W=320,H=100,P=6,e=Math.min(n-1,i+K);
+  const X=j=>P+(W-2*P)*j/(n-1),Y=v=>H-P-(H-2*P)*(v-mn)/((mx-mn)||1);
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%"><rect x="${X(i)}" y="0" width="${Math.max(2,X(e)-X(i))}" height="${H}" style="fill:var(--acc);opacity:.18"/><line x1="${P}" x2="${W-P}" y1="${Y(0)}" y2="${Y(0)}" style="stroke:var(--line)" stroke-dasharray="3 3"/><polyline points="${d.map((v,j)=>X(j).toFixed(1)+','+Y(v).toFixed(1)).join(' ')}" fill="none" style="stroke:var(--acc)" stroke-width="1.6"/><line x1="${X(i)}" x2="${X(i)}" y1="0" y2="${H}" style="stroke:#fff" stroke-width="1.2"/></svg><small>Ventaja en victorias de ${esc(c.nA)} sobre ${esc(c.nB)} · franja = próximos ${K} partidos</small>`}
+function detail(an,c,nd,K,MS){
+  const i=nd.idx,m=c.ms[i],n=an.n,e=Math.min(n-1,i+K),a=an.A[i],b=an.B[i];
+  const lead=j=>{if(j<0)return 'Sin partidos todavía';const x=an.wA[j],y=an.wB[j];return x===y?`serie igualada ${x}–${y}`:`${esc(x>y?c.nA:c.nB)} lidera ${Math.max(x,y)}–${Math.min(x,y)}`};
+  const lines=[],dt=j=>fd(c.ms[j].date),sc=j=>`${esc(c.nA)} ${an.A[j]}-${an.B[j]} ${esc(c.nB)}`;
+  an.st.filter(s=>s.len>=MS&&((s.start>=i&&s.start<=e)||s.brokenBy===i)).forEach(s=>{
+    lines.push(`🔥 ${s.brokenBy===i?'Cortada acá':s.start===i?'Empezó acá':'Después'}: racha de ${s.len} victorias de ${esc(nm(c,s.side))} (${dt(s.start)} → ${dt(s.end)})${s.brokenBy==null?' · sigue activa':''}`)});
+  an.nodes.filter(d=>d.idx>=i&&d.idx<=e).forEach(d=>d.ev.filter(v=>/^record/.test(v.k)).forEach(v=>lines.push(`${IC[v.k]} ${d.idx===i?'En este partido':dt(d.idx)}: ${esc(evTxt(v,d,an,c))}`)));
+  an.nodes.filter(d=>d.idx>i&&d.idx<=e).forEach(d=>d.ev.filter(v=>v.k==='igualo'||v.k==='delantera').forEach(v=>lines.push(`${IC[v.k]} ${dt(d.idx)}: ${esc(evTxt(v,d,an,c))}`)));
+  const sA=Math.sign(an.wA[i]-an.wB[i]),sE=Math.sign(an.wA[e]-an.wB[e]);
+  const dom=e===i?'':sA===sE?(sA===0?'La serie sigue igualada.':'El dominio no cambió de manos.'):'El dominio cambió.';
+  const nx=i<n-1?`<li>Siguiente partido (${dt(i+1)}): ${sc(i+1)}</li>`:'';
+  const p=(x,t)=>t?Math.round(x*100/t)+'%':'–',av=(x,t)=>t?(x/t).toFixed(1):'–',S=[an.rng(i-K,i-1),an.rng(i+1,i+K),an.rng(i+1,n-1)];
+  const rows=[['Partidos',s=>s.n],['Victorias '+c.nA,s=>s.w],['Empates',s=>s.d],['Victorias '+c.nB,s=>s.l],['% victorias '+c.nA,s=>p(s.w,s.n)],['% victorias '+c.nB,s=>p(s.l,s.n)],['Goles/partido '+c.nA,s=>av(s.ga,s.n)],['Goles/partido '+c.nB,s=>av(s.gb,s.n)]];
+  const p0=prim(nd);
+  return `<div class="hd"><div><b>${IC[p0.k]} ${esc(evTitle(p0,an,c))}</b><br><small>${dt(i)} · ${esc(c.hl(m))} · partido ${i+1} de ${n}</small></div><button class="x" data-a="cl">✕</button></div>`+
+  `<div class="sc"><span>${esc(c.nA)}</span><b>${a}–${b}</b><span>${esc(c.nB)}</span></div>`+
+  `<h4>Qué pasó en este partido</h4><ul>${nd.ev.map(v=>`<li>${IC[v.k]} ${esc(evTxt(v,nd,an,c))}</li>`).join('')}</ul>`+
+  `<h4>La serie hasta acá</h4><ul><li>${an.wA[i]} victorias de ${esc(c.nA)} · ${i+1-an.wA[i]-an.wB[i]} empates · ${an.wB[i]} de ${esc(c.nB)}</li><li>Después de este partido: ${lead(i)}</li></ul>`+
+  `<h4>Consecuencias (próximos ${K} partidos)</h4><ul>${nx}${lines.map(l=>`<li>${l}</li>`).join('')||'<li class="mut">Sin rachas ni récords nuevos en esta ventana.</li>'}${e>i?`<li>Dominio: ${lead(i)} → ${lead(e)}. ${dom}</li>`:''}</ul>`+
+  `<h4>Estadísticas antes y después</h4><table><tr><th></th><th>Antes ${K}</th><th>Después ${K}</th><th>Desde acá</th></tr>${rows.map(r=>`<tr><td>${esc(r[0])}</td>${S.map(s=>`<td>${r[1](s)}</td>`).join('')}</tr>`).join('')}</table>`+
+  `<h4>Evolución</h4>${chart(an,c,i,K)}`+
+  (nd.children.length?`<h4>Conectado con</h4>${nd.children.map(k=>`<span class="chip" data-a="sel" data-v="${esc(c.ms[k.idx].id)}">${IC[prim(k).k]} ${dt(k.idx)}</span>`).join('')}`:'')}
+return {analyze,treeHTML,detail,desc,fd,esc};
+})();
+/*A-END*/
+if(typeof document!=='undefined'){
+const {fd,esc}=ARB,K0='duelosfc_v1',KU='iator_arbol_v1',CL_URL='https://iator-db2c9-default-rtdb.firebaseio.com/iator/';
+const app=document.getElementById('app'),sh=document.getElementById('sh');
+let S={rid:null,pf:{},hist:'all',minS:5,K:10};try{Object.assign(S,JSON.parse(localStorage.getItem(KU)||'{}'))}catch(e){}
+let D={rivals:[],matches:[],cfg:{},hcfg:{},lf:{},src:'dispositivo'},CL=null,msg='',sel=null;const col=new Set();
+const sv=()=>{try{localStorage.setItem(KU,JSON.stringify(S))}catch(e){}};
+function readLocal(){try{return JSON.parse(localStorage.getItem(K0)||'null')||{}}catch(e){return {}}}
+async function readCloud(){try{const ac=new AbortController(),t=setTimeout(()=>ac.abort(),8000);
+  const [r,m]=await Promise.all(['rivals','matches'].map(k=>fetch(CL_URL+k+'.json',{signal:ac.signal}).then(x=>{if(!x.ok)throw 0;return x.json()})));
+  clearTimeout(t);return {r:Object.values(r||{}),m:Object.values(m||{})}}catch(e){return null}}
+function merge(){const L=readLocal(),lr=L.rivals||[],lm=L.matches||[];let R=lr,M=lm,src='dispositivo';
+  if(CL){let kn=[];try{kn=JSON.parse(localStorage.getItem(K0+'_known')||'[]')}catch(e){}const ks=new Set(kn),ir=new Set(CL.r.map(x=>x.id)),im=new Set(CL.m.map(x=>x.id));
+    R=[...CL.r,...lr.filter(r=>!ir.has(r.id)&&!ks.has(r.id))];M=[...CL.m,...lm.filter(m=>!im.has(m.id)&&!ks.has(m.id))];src='nube + dispositivo'}
+  D={rivals:R,matches:M.filter(m=>typeof m.my==='number'&&typeof m.opp==='number'&&m.date),cfg:L.cfg||{},hcfg:L.hcfg||{},lf:Object.fromEntries(lr.map(r=>[r.id,!!r.flip])),src};
+  const ok=v=>/^#[0-9a-f]{6}$/i.test(v||''),st=document.documentElement.style;
+  if(ok(D.cfg.acc))st.setProperty('--acc',D.cfg.acc);if(ok(D.cfg.bg))st.setProperty('--bg',D.cfg.bg)}
+async function refresh(cloud){msg='Actualizando…';if(cloud){merge();render();CL=await readCloud()}merge();
+  msg=`Datos: ${D.src} · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;render()}
+const hn=k=>(D.hcfg.names&&String(D.hcfg.names[k]||'').trim())||{new:'EF27',old:'EF26'}[k];
+function render(){
+  const cnt=id=>D.matches.filter(m=>m.rid===id).length,rv=[...D.rivals].sort((a,b)=>cnt(b.id)-cnt(a.id));
+  const head=`<h1>🌳 Árbol de consecuencias</h1><small>Sección independiente de Iator: solo lee tus datos, no modifica nada.</small>`;
+  if(!rv.length){app.innerHTML=head+`<div class="card mut">No encontré rivales ni partidos. Abrí Iator al menos una vez en este mismo navegador y volvé.</div>`;sh.innerHTML='';document.body.classList.remove('op');return}
+  if(!rv.some(r=>r.id===S.rid))S.rid=rv[0].id;
+  const r=rv.find(x=>x.id===S.rid),me=(D.cfg.me||'').trim()||'Yo',flip=S.pf[r.id]!==undefined?S.pf[r.id]:!!D.lf[r.id];
+  const all=D.matches.filter(m=>m.rid===r.id),ms=all.filter(m=>S.hist==='all'||(S.hist==='old')===!!m.old)
+    .sort((x,y)=>String(x.date).localeCompare(y.date)||(x.ts||0)-(y.ts||0)||String(x.id).localeCompare(String(y.id)));
+  const nA=flip?r.name:me,nB=flip?me:r.name,c={ms,nA,nB,hl:m=>hn(m.old?'old':'new')};
+  let h=head+`<div class="card"><select data-s="rid">${rv.map(x=>`<option value="${esc(x.id)}"${x.id===r.id?' selected':''}>${esc(x.name)} (${cnt(x.id)})</option>`).join('')}</select>
+  <small>Ver como</small><div class="seg"><button class="${flip?'':'on'}" data-a="flip" data-v="0">Soy ${esc(me)}</button><button class="${flip?'on':''}" data-a="flip" data-v="1">Soy ${esc(r.name)}</button></div>
+  <div class="g2"><div><small>Historial</small><select data-s="hist"><option value="all">Todos (${all.length})</option><option value="new"${S.hist==='new'?' selected':''}>${esc(hn('new'))} (${all.filter(m=>!m.old).length})</option><option value="old"${S.hist==='old'?' selected':''}>${esc(hn('old'))} (${all.filter(m=>m.old).length})</option></select></div>
+  <div><small>Rachas desde</small><select data-s="minS">${[3,4,5,6,8,10].map(v=>`<option value="${v}"${v===+S.minS?' selected':''}>${v} victorias</option>`).join('')}</select></div></div>
+  <small>Ventana de consecuencias</small><select data-s="K">${[5,10,20,30].map(v=>`<option value="${v}"${v===+S.K?' selected':''}>Próximos ${v} partidos</option>`).join('')}</select>
+  <div class="seg"><button data-a="rf">↻ Actualizar</button></div><small>${esc(msg)}</small></div>`;
+  let an=null,nd=null;
+  if(ms.length<3)h+=`<div class="card mut">Hacen falta al menos 3 partidos para armar el árbol.</div>`;
+  else{an=ARB.analyze(ms,{flip,minStreak:+S.minS});nd=sel?an.nodes.find(d=>ms[d.idx].id===sel):null;
+    h+=`<div class="card"><b>${ms.length} partidos · ${an.nodes.length} nodos</b><br><small>${an.wA[ms.length-1]} victorias de ${esc(nA)} · ${ms.length-an.wA[ms.length-1]-an.wB[ms.length-1]} empates · ${an.wB[ms.length-1]} de ${esc(nB)}. Tocá un nodo para ver sus consecuencias; ▾ pliega una rama.</small></div>`+ARB.treeHTML(an,c,nd,col)}
+  app.innerHTML=h;
+  sh.innerHTML=nd?ARB.detail(an,c,nd,+S.K,+S.minS):'';document.body.classList.toggle('op',!!nd)}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t)return;const a=t.dataset.a,v=t.dataset.v;
+  if(a==='sel'){sel=v;render()}else if(a==='cl'){sel=null;render()}else if(a==='tg'){col.has(v)?col.delete(v):col.add(v);render()}
+  else if(a==='flip'){S.pf[S.rid]=v==='1';sv();render()}else if(a==='rf')refresh(true)});
+document.addEventListener('change',e=>{const k=e.target.dataset.s;if(!k)return;S[k]=e.target.value;if(k==='rid')sel=null;sv();render()});
+addEventListener('storage',e=>{if(e.key===K0||e.key===K0+'_known')refresh(false)});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true)});
+setInterval(()=>{if(!document.hidden)refresh(true)},120000);
+refresh(true);
+}
+</script></body></html>
