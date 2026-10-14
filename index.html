@@ -861,6 +861,25 @@ function loadTess(){
   });
 }
 
+/* ---------- VERIFICACIÓN DE UNOS (agregado): cuenta las manchas de tinta de la celda (≈ cantidad de dígitos). Si el lector devolvió menos dígitos que manchas
+   (típico de "71"→"7", "11"→"1", "111"→nada) se avisa en amarillo y se prueba leer cada mancha por separado. Nunca guarda nada solo. ---------- */
+function blobsDe(d,w,h){
+  const N=w*h,lab=new Int32Array(N),B=[];let n=0;
+  for(let s=0;s<N;s++){
+    if(lab[s]||d[s*4]>=128)continue;
+    const st=[s];lab[s]=++n;let x0=w,x1=-1,y0=h,y1=-1,ar=0;
+    while(st.length){
+      const i=st.pop(),x=i%w,y=(i-x)/w;ar++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=w||ny>=h)continue;const j=ny*w+nx;if(!lab[j]&&d[j*4]<128){lab[j]=n;st.push(j)}}
+    }
+    B.push({x0,x1:x1+1,y0,y1:y1+1,ar});
+  }
+  let mh=0;B.forEach(b=>{if(b.y1-b.y0>mh)mh=b.y1-b.y0});
+  return B.filter(b=>b.y1-b.y0>=.4*mh&&b.ar>=.03*mh*mh).sort((a,b)=>a.x0-b.x0);
+}
+function blobsDeCanvas(cv){return blobsDe(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height)}
+if(window.OCRX)window.OCRX.blobsDe=blobsDe;
+
 /* ---------- método principal: celda por celda ---------- */
 async function readByLayout(bmp,onProg){
   const L=LAYOUT,keys=(window.MSTAT_FIELDS||[]).map(f=>f[0]);
@@ -878,7 +897,7 @@ async function readByLayout(bmp,onProg){
     };
     /* devuelve {v, dud}: 2 lecturas que coinciden = confiable; si no, se agregan lecturas con otros modos (8 y 13) y se vota.
        Es dudoso si no hay valor, si lo respaldan menos de 2 lecturas o si hay empate con otro valor. */
-    const readCell=async box=>{
+    const readCell0=async box=>{
       let r=await reads(box,'7',[false,true]);
       if(r[0]!=null&&r[0]===r[1])return{v:r[0],dud:false};
       r=r.concat(await reads(box,'8',[false,true]));
@@ -886,12 +905,40 @@ async function readByLayout(bmp,onProg){
       if(w.n<2||w.tie){r=r.concat(await reads(box,'13',[false,true]));w=vote(r)}
       return{v:w.v,dud:w.v==null||w.n<2||w.tie};
     };
+    /* VERIFICACIÓN DE UNOS (agregado): se lee cada mancha por separado (modo 10 + solo dígitos) y, si es angosta y alta, se considera un 1. */
+    const readOne=async(cv,b)=>{
+      const w=b.x1-b.x0,h=b.y1-b.y0,c=document.createElement('canvas');c.width=w+28;c.height=h+28;
+      const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(cv,b.x0,b.y0,w,h,14,14,w,h);
+      const s=document.createElement('canvas');s.height=90;s.width=Math.max(8,Math.round(c.width*90/c.height));
+      const sx=s.getContext('2d');sx.fillStyle='#fff';sx.fillRect(0,0,s.width,s.height);sx.drawImage(c,0,0,s.width,s.height);c.width=c.height=0;
+      const {data}=await worker.recognize(s);s.width=s.height=0;
+      const v=clean(data.text);
+      if(v!=null&&v<10)return String(v);
+      return w/h<=.42?'1':null;
+    };
+    /* devuelve lo mismo que readCell0; si la cantidad de dígitos leídos no coincide con la de manchas, el resultado queda dudoso (amarillo) y, si faltaban dígitos, se prueba la lectura por mancha */
+    const readCell=async(box,skip)=>{
+      const r0=await readCell0(box);
+      if(skip)return r0;
+      try{
+        const cv=cellCanvas(bmp,box[0],box[1],box[2],box[3],false);
+        try{
+          const bl=blobsDeCanvas(cv),nb=bl.length,len=r0.v==null?0:String(r0.v).length;
+          if(!nb||len===nb)return r0;
+          if(len>nb||nb>3)return{v:r0.v,dud:true};
+          await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'0123456789'});
+          let t='';
+          for(const b of bl){const g=await readOne(cv,b);if(g==null){t=null;break}t+=g}
+          return t?{v:Number(t),dud:true}:{v:r0.v,dud:true};
+        }finally{cv.width=cv.height=0;try{await worker.setParameters({tessedit_char_whitelist:''})}catch(e){}}
+      }catch(e){console.error('OCR (verificación de unos):',e);return r0}
+    };
     const p=(L.ty1-L.ty0)/keys.length,cw=L.cell*(L.tx1-L.tx0);
     const rows={};let nulls=0;
     for(let k=0;k<keys.length;k++){
       if(onProg)onProg(k/(keys.length+1),'fila '+(k+1)+' de '+keys.length);
       const y0=L.ty0+k*p+0.12*p,y1=L.ty0+k*p+0.84*p;
-      const A=await readCell([L.tx0,L.tx0+cw,y0,y1]),B=await readCell([L.tx1-cw,L.tx1,y0,y1]);
+      const sk=keys[k]==='pos',A=await readCell([L.tx0,L.tx0+cw,y0,y1],sk),B=await readCell([L.tx1-cw,L.tx1,y0,y1],sk);
       let a=A.v,b=B.v,dud=A.dud||B.dud;
       const mx=keys[k]==='pos'?100:999;
       if(a!=null&&a>mx){a=null;dud=true}if(b!=null&&b>mx){b=null;dud=true}
