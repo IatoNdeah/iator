@@ -880,6 +880,61 @@ function blobsDe(d,w,h){
 function blobsDeCanvas(cv){return blobsDe(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height)}
 if(window.OCRX)window.OCRX.blobsDe=blobsDe;
 
+/* ---------- SEGUNDA LECTURA CON LA FUENTE DEL JUEGO (agregado): cada dígito de la celda se compara con plantillas de eFootball Sans Bold (0-9),
+   independiente de Tesseract. Si las dos lecturas coinciden, queda como estaba; si no coinciden, el número queda en amarillo (ocr-dud) para que lo revises.
+   Si no se puede segmentar (dígitos pegados, más de 3 manchas) no opina y valen los controles de antes. Nunca guarda nada solo. ---------- */
+const TPL_W=32,TPL_H=48,TPL_AR=[0.7113, 0.4234, 0.6763, 0.6761, 0.7518, 0.6906, 0.7357, 0.708, 0.7042, 0.7357],
+TPL_HEX=["001ff800007ffe0001ffff8003ffffc007ffffe00ffffff01ffffff81ffffff83ffffffc3ffffffc7ffc3ffe7ff81ffe7ff00ffe7fe007feffe007ffffe007ffffe007ffffe007ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffe007ffffe007ffffe007ffffe007ff7fe007fe7ff00ffe7ff81ffe7ffc3ffe3ffffffc3ffffffc1ffffff81ffffff80ffffff007ffffe003ffffc001ffff80007ffe00001ff800", "0001ffff01ffffff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3ffffe003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff0003ffff", "001ff80000ffff0001ffffc007ffffe00ffffff01ffffff81ffffffc3ffffffc7ffffffe7ffffffe7ff83ffefff01ffeffe00fff7fe00fff07c00fff00000fff00000fff00000ffe00000ffe00001ffe00001ffe00003ffc00007ffc00007ff80000fff80001fff00003ffe00007ffe0000fffc0001fff80003fff00007ffe0000fffc0001fff80003fff00007ffe0000fffc0001fff80003fffffff3fffffff3fffffff3fffffff3fffffff3fffffff3fffffff3fffffff3fffffff3fffffff", "001ff80000ffff0003ffffc007ffffe00ffffff01ffffff81ffffff83ffffffc7ffffffc7ffe7ffe7ff01ffe7fe00ffe0fc00ffe00c007fe000007fe000007fe00000ffe00000ffc00001ffc0000fffc000ffff8000ffff0000fffe0000fffc0000ffff0000ffff8000ffffc000ffffe00001ffe00000ffe000007ff000007ff000007ff000007ff01c007ff1fc007ffffe00ffffff01ffffffffffe7ffffffe7ffffffe3ffffffc3ffffff81ffffff80ffffff003ffffc000ffff00001ff800", "0007ffe0000fffe0000fffe0001fffe0001fffe0003fffe0003fffe0003fffe0007fffe0007fffe000ffffe000ffbfe001ff3fe001ff3fe003fe3fe003fe3fe007fe3fe007fc3fe00ffc3fe00ff83fe00ff83fe01ff03fe01ff03fe03fe03fe03fe03fe07fe03fe07fc03fe0ffc03fe0ff803fe0ff803fe0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00003fe000003fe000003fe000003fe000003fe000003fe000003fe000003fe000003fe0", "1ffffffc1ffffffc1ffffffc1ffffffc1ffffffc1ffffffc1ffffffc1ffffffc1ffffffc1ffffffc1ff800001ff800001ff800001ff800001ff800001ff800001ff800001fffe0001fffff001fffffc01ffffff01ffffff81ffffff81ffffffc1ffffffc1ffffffe1ffffffe00003fff00001fff00000fff000007ff000007ff000007ff000007ff03c007ff1fe00fffffe00ffffff83ffefffffffe7ffffffe7ffffffc3ffffffc3ffffff81ffffff00fffffe003ffffc001ffff00001ff800", "000fff00000fff00001ffe00001ffc00003ffc00007ff800007ff80000fff00000ffe00001ffe00001ffc00003ff800007ff800007ff00000ffe00000ffe78001fffff001fffffc03ffffff03ffffff83ffffff87ffffffc7ffffffe7ffffffe7ffc3ffefff00fffffe007ffffe003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffe007fffff007ff7ff81ffe7ffffffe7ffffffe3ffffffc3ffffffc1ffffff80ffffff007ffffe003ffffc000ffff00001ff800", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc007ffffc00fffffc00ffeffc00ffeffc01ffeffc01ffcffc01ffcffc03ffcffc03ff800003ff800007ff000007ff00000fff00000ffe00000ffe00001ffe00001ffc00001ffc00003ffc00003ff800003ff800007ff800007ff000007ff00000fff00000ffe00001ffe00001ffc00001ffc00003ffc00003ff800003ff800007ff800007ff000007ff00000fff00000ffe00000ffe000", "001ff80000ffff0003ffffc00ffffff01ffffff83ffffff83ffffffc7ffffffe7ffffffe7ffc1ffefff00ffeffe007ffffe003ffffe003ffffe003ffffe003ff7fe007fe7fe007fe7ff80ffe3ffffffc1ffffff80ffffff007ffffe007ffffe00ffffff01ffffff83ffffffc7ffffffe7ff81ffe7ff00fffffe007ffffc003ffffc003ffffc003ffffc003ffffc007ffffe007fffff00ffffffc3fff7ffffffe7ffffffe7ffffffc3ffffffc1ffffff80ffffff007ffffc001ffff80001ff800", "001ff80000ffff0003ffffc007ffffe00ffffff01ffffff83ffffffc3ffffffc7ffffffe7ffffffe7ff81ffeffe00fffffe007ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffc003ffffe007ffffe007fffff01fff7ffffffe7ffffffe7ffffffe3ffffffe1ffffffc0ffffffc07fffffc03fffff800fffff800007ff00000fff00000ffe00001ffe00003ffc00003ff800007ff80000fff00000fff00001ffe00001ffe00003ffc00007ff800007ff80000fff00000fff000"];
+let TPL_BITS=null;
+function tplInit(){
+  TPL_BITS=TPL_HEX.map(h=>{const o=new Uint8Array(TPL_W*TPL_H);for(let i=0;i<o.length;i++)o[i]=(parseInt(h[i>>2],16)>>(3-(i&3)))&1;return o});
+}
+function tplPesos(S,N){
+  const M=[];
+  for(let i=0;i<N;i++){const lo=i*S/N,hi=(i+1)*S/N,r=[];for(let j=Math.floor(lo);j<Math.min(S,Math.ceil(hi));j++){const o=Math.min(j+1,hi)-Math.max(j,lo);if(o>0)r.push([j,o/(hi-lo)])}M.push(r)}
+  return M;
+}
+/* recorte de una mancha -> máscara de TPL_W x TPL_H (promedio por área, umbral .5) */
+function tplNorm(d,w,b){
+  const sw=b.x1-b.x0,sh=b.y1-b.y0,py=tplPesos(sh,TPL_H),px=tplPesos(sw,TPL_W),o=new Uint8Array(TPL_W*TPL_H);
+  for(let y=0;y<TPL_H;y++)for(let x=0;x<TPL_W;x++){
+    let s=0;
+    for(const[j,wy]of py[y])for(const[i,wx]of px[x])if(d[((b.y0+j)*w+b.x0+i)*4]<128)s+=wy*wx;
+    o[y*TPL_W+x]=s>.5?1:0;
+  }
+  return o;
+}
+/* devuelve {v, mg} (valor y margen entre el mejor y el segundo candidato) o null si no puede opinar */
+function tplLeer(d,w,h){
+  if(!TPL_BITS)tplInit();
+  const bl=blobsDe(d,w,h);
+  if(!bl.length||bl.length>3)return null;
+  let s='',mg=9;
+  for(const b of bl){
+    const ar=(b.x1-b.x0)/(b.y1-b.y0);
+    if(ar>1.1)return null;
+    const m=tplNorm(d,w,b),sc=[];
+    for(let k=0;k<10;k++){
+      const t=TPL_BITS[k];let a=0,u=0;
+      for(let i=0;i<m.length;i++){if(m[i]&&t[i])a++;if(m[i]||t[i])u++}
+      sc.push([a/Math.max(1,u)-Math.abs(Math.log(ar/TPL_AR[k]))*.25,k]);
+    }
+    sc.sort((p,q)=>q[0]-p[0]);
+    s+=sc[0][1];mg=Math.min(mg,sc[0][0]-sc[1][0]);
+  }
+  return{v:Number(s),mg};
+}
+function tplCheck(r0,cv){
+  try{
+    const t=tplLeer(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height);
+    if(!t)return r0;
+    if(r0.v==null)return t.mg>=.1?{v:t.v,dud:true}:r0;
+    if(t.v!==r0.v)return{v:r0.v,dud:true};
+    return r0;
+  }catch(e){console.error('OCR (lectura con la fuente):',e);return r0}
+}
+if(window.OCRX)window.OCRX.tplLeer=tplLeer;
+
 /* ---------- método principal: celda por celda ---------- */
 async function readByLayout(bmp,onProg){
   const L=LAYOUT,keys=(window.MSTAT_FIELDS||[]).map(f=>f[0]);
@@ -924,7 +979,7 @@ async function readByLayout(bmp,onProg){
         const cv=cellCanvas(bmp,box[0],box[1],box[2],box[3],false);
         try{
           const bl=blobsDeCanvas(cv),nb=bl.length,len=r0.v==null?0:String(r0.v).length;
-          if(!nb||len===nb)return r0;
+          if(!nb||len===nb)return tplCheck(r0,cv);
           if(len>nb||nb>3)return{v:r0.v,dud:true};
           await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'0123456789'});
           let t='';
